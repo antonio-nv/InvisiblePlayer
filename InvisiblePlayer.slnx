@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Solution Items/" />
+  <Project Path="InvisiblePlayer.Analyzer/InvisiblePlayer.Analyzer.csproj" Id="0b0b8d61-855b-4aa2-8c08-f76be86836bc" />
+  <Project Path="InvisiblePlayer.Core/InvisiblePlayer.Core.csproj" />
+  <Project Path="InvisiblePlayer.Raspi/InvisiblePlayer.Raspi.csproj" Id="bfd5761e-fdc8-468f-981b-d52c3399b71b" />
+  <Project Path="InvisiblePlayer.UI.Windows/InvisiblePlayer.UI.Windows.csproj" Id="07320e0e-56a4-49f9-acb9-574589e0ac5b" />
+</Solution>
