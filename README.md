@@ -1,1 +1,59 @@
 # InvisiblePlayer
+
+Sada projektů okolo přehrávání a syntézy zvuku pro Windows, s výhledem na budoucí hardwarové
+rozšíření (elektronické varhany na Raspberry Pi).
+
+## Projekty v tomto řešení
+
+- **InvisiblePlayer.UI.Windows** – přehrávač audio/video souborů (mp3, wav, flac, MIDI, video),
+  napojení na MIDI-IN. Zatím ve fázi provizorního textového rozhraní.
+- **InvisiblePlayer.Core** – SW syntezátor zvuku (oscilátory, obálky, filtry, hlasy nástrojů).
+- **InvisiblePlayer.Analyzer** – SW analyzátor zvuku s 2D grafy (WPF).
+- **InvisiblePlayer.Raspi** – plánovaná hardwarová větev (Raspberry Pi, HiFiBerry DAC8x,
+  MIDI in/out, GPIO ovládání kláves).
+
+## Stav projektu
+
+⚠️ Projekt je ve **rané fázi vývoje**. Struktura i API se mohou často měnit, řada částí
+je provizorní nebo nedokončená. Zpětná vazba a nápady vítány.
+
+## Licence
+
+Vlastní kód je licencován pod [MIT licencí](LICENSE).
+
+# Third-Party Notices
+
+This project (InvisiblePlayer) is licensed under the MIT License (see [LICENSE](LICENSE)),
+but it also uses the following third-party libraries, which come with their own license terms.
+
+---
+
+## LibVLCSharp / LibVLCSharp.WPF (and LibVLC)
+
+- **License:** GNU Lesser General Public License 2.1 or later (LGPL-2.1-or-later)
+- **Source:** https://github.com/videolan/libvlcsharp
+- **Note:** The library is referenced via dynamic linking (NuGet package / .dll reference),
+  which satisfies the LGPL requirements. InvisiblePlayer's own code, which only consumes
+  LibVLCSharp, remains under the MIT license.
+  Full text of the LGPL 2.1 license: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+## NAudio (NAudio, NAudio.Asio, NAudio.Midi, NAudio.Wasapi, NAudio.WinForms, NAudio.WinMM, NAudio.Core)
+
+- **License:** MIT
+- **Source:** https://github.com/naudio/NAudio
+
+## Melanchall.DryWetMidi
+
+- **License:** MIT
+- **Source:** https://github.com/melanchall/drywetmidi
+
+## System.Device.Gpio
+
+- **License:** MIT
+- **Source:** https://github.com/dotnet/iot
+
+---
+
+*If additional third-party libraries are added to the project, please list them here
+along with their license and source.*
+
