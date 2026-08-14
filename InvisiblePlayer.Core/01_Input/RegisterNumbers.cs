@@ -24,7 +24,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace InvisiblePlayer.Core.Tones
+namespace InvisiblePlayer.Core.Input
 {
     public static class RegisterNumbers
     {
