@@ -5,25 +5,41 @@ using InvisiblePlayer.Core.Tones;
 
 namespace InvisiblePlayer.Core.ToneEngine
 {
+    // Který "nástroj" (skupina hlasů) má ToneEngine právě používat.
+    // Až přibudou desítky varhanních rejstříků, budou se všechny
+    // vybírat pořád jen přes InstrumentType.Organ + CurrentOrganPreset.
+    public enum InstrumentType
+    {
+        Organ,
+        Piano,
+        Cembalo,
+        Bell
+    }
+
     public class ActiveNote
     {
         public int NoteNumber { get; set; }   // MIDI číslo noty (např. 60 = C4)
         public double Frequency { get; set; } // Kmitočet v Hz (např. 261.63 Hz)
-        public OrganVoice Voice { get; set; } // Samostatná instance hlasu
+        public SynthVoice Voice { get; set; } // Libovolný hlas (Organ/Piano/Cembalo/Bell - všechny dědí ze SynthVoice)
     }
-
-
 
     public class ToneEngine
     {
-
         private readonly double _sampleRate;
 
-        // Seznam právě znějících hlasů pro rejstřík Bombard
-        private readonly List<ActiveNote> _activeBombardNotes = new List<ActiveNote>();
+        // Seznam právě znějících not - společný pro všechny nástroje
+        private readonly List<ActiveNote> _activeNotes = new List<ActiveNote>();
 
         // Zámek chránící seznam před konfliktem MIDI vlákna a Audio vlákna
         private readonly object _lock = new object();
+
+        // Aktuálně vybraný nástroj. Výchozí je Organ + Bombard 16', stejně jako dřív.
+        public InstrumentType CurrentInstrument { get; set; } = InstrumentType.Organ;
+
+        // Aktuálně vybraný varhanní rejstřík (preset). Používá se jen když
+        // CurrentInstrument == InstrumentType.Organ. Časem půjde přepínat
+        // na kterýkoliv z desítek presetů (_002_..., _003_... atd.).
+        public VoicePreset CurrentOrganPreset { get; set; } = _001_Bombard16Preset.Preset;
 
         public ToneEngine(double sampleRate = 44100.0)
         {
@@ -37,16 +53,16 @@ namespace InvisiblePlayer.Core.ToneEngine
         public void NoteOn(int noteNumber)
         {
             // Přepočet MIDI noty na frekvenci (A440 ladění)
+            // TODO (výhledově): zohlednit historickou temperaturu nástroje - viz Temperament.cs
             double freq = 440.0 * Math.Pow(2.0, (noteNumber - 69) / 12.0);
 
-            // Vytvoříme nový hlas pro tento tón načtením presetu Bombard 16'
-            var voice = new OrganVoice(_001_Bombard16Preset.Preset, _sampleRate);
+            SynthVoice voice = CreateVoiceForCurrentInstrument();
             voice.NoteOn();
 
             // Bezpečné přidání do seznamu pod zámkem
             lock (_lock)
             {
-                _activeBombardNotes.Add(new ActiveNote
+                _activeNotes.Add(new ActiveNote
                 {
                     NoteNumber = noteNumber,
                     Frequency = freq,
@@ -55,20 +71,41 @@ namespace InvisiblePlayer.Core.ToneEngine
             }
         }
 
+        // Vytvoří novou instanci hlasu podle právě vybraného nástroje.
+        // Sem stačí přidat "case" pro každý další nástroj (varhany budou mít
+        // vždycky jen jeden case - Organ - protože rejstřík řeší CurrentOrganPreset).
+        private SynthVoice CreateVoiceForCurrentInstrument()
+        {
+            switch (CurrentInstrument)
+            {
+                case InstrumentType.Piano:
+                    return new PianoVoice(_sampleRate);
+
+                case InstrumentType.Cembalo:
+                    return new CembaloVoice(_sampleRate);
+
+                case InstrumentType.Bell:
+                    return new BellVoice(_sampleRate);
+
+                case InstrumentType.Organ:
+                default:
+                    return new OrganVoice(CurrentOrganPreset, _sampleRate);
+            }
+        }
+
         public void NoteOff(int noteNumber)
         {
             lock (_lock)
             {
-                for (int i = 0; i < _activeBombardNotes.Count; i++)
+                for (int i = 0; i < _activeNotes.Count; i++)
                 {
-                    if (_activeBombardNotes[i].NoteNumber == noteNumber)
+                    if (_activeNotes[i].NoteNumber == noteNumber)
                     {
-                        _activeBombardNotes[i].Voice?.NoteOff();
+                        _activeNotes[i].Voice?.NoteOff();
                     }
                 }
             }
         }
-
 
         // =========================================================================
         // 2. GENEROVÁNÍ ZVUKU PRO ZVUKOVKU (Volá audio karta v reálném čase)
@@ -80,9 +117,9 @@ namespace InvisiblePlayer.Core.ToneEngine
 
             lock (_lock)
             {
-                for (int i = _activeBombardNotes.Count - 1; i >= 0; i--)
+                for (int i = _activeNotes.Count - 1; i >= 0; i--)
                 {
-                    var activeNote = _activeBombardNotes[i];
+                    var activeNote = _activeNotes[i];
 
                     if (activeNote?.Voice != null)
                     {
@@ -93,7 +130,7 @@ namespace InvisiblePlayer.Core.ToneEngine
                         // ČIŠTĚNÍ PAMĚTI: Pokud nota dozněla (ADSR obálka dojela na konec), smažeme ji ze seznamu!
                         if (activeNote.Voice.IsFinished)
                         {
-                            _activeBombardNotes.RemoveAt(i);
+                            _activeNotes.RemoveAt(i);
                         }
                     }
                 }
@@ -102,9 +139,13 @@ namespace InvisiblePlayer.Core.ToneEngine
             return Math.Clamp(mixedSample * 0.3, -1.0, 1.0);
         }
     }
+}
 
 
-    public class Temperament
+
+
+
+public class Temperament
         {
             public string Name { get; set; } = "Rovnoměrná (Equal)";
 
@@ -140,4 +181,4 @@ namespace InvisiblePlayer.Core.ToneEngine
                 }
             };
         }
-    }
+ 
