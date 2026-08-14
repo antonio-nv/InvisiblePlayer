@@ -5,17 +5,6 @@ using InvisiblePlayer.Core.Tones;
 
 namespace InvisiblePlayer.Core.ToneEngine
 {
-    // Který "nástroj" (skupina hlasů) má ToneEngine právě používat.
-    // Až přibudou desítky varhanních rejstříků, budou se všechny
-    // vybírat pořád jen přes InstrumentType.Organ + CurrentOrganPreset.
-    public enum InstrumentType
-    {
-        Organ,
-        Piano,
-        Cembalo,
-        Bell
-    }
-
     public class ActiveNote
     {
         public int NoteNumber { get; set; }   // MIDI číslo noty (např. 60 = C4)
@@ -27,23 +16,65 @@ namespace InvisiblePlayer.Core.ToneEngine
     {
         private readonly double _sampleRate;
 
-        // Seznam právě znějících not - společný pro všechny nástroje
+        // Seznam právě znějících not - společný pro všechny nástroje/rejstříky
         private readonly List<ActiveNote> _activeNotes = new List<ActiveNote>();
 
-        // Zámek chránící seznam před konfliktem MIDI vlákna a Audio vlákna
+        // Aktuálně "zatažené" rejstříky (registrace) - stejný princip jako
+        // rejstříkové knoflíky na skutečných varhanách. Klidně jich může
+        // být zatažených víc najednou (např. Bombard 16' + Zvon Zikmund),
+        // pak na jedno zmáčknutí klávesy zazní obojí zároveň.
+        private readonly List<VoicePreset> _activeRegisters = new List<VoicePreset>
+        {
+            _001_Bombard16Preset.Preset // Výchozí stav - stejné chování jako dřív
+        };
+
+        // Zámek chránící sdílená data před konfliktem MIDI vlákna a Audio vlákna
         private readonly object _lock = new object();
-
-        // Aktuálně vybraný nástroj. Výchozí je Organ + Bombard 16', stejně jako dřív.
-        public InstrumentType CurrentInstrument { get; set; } = InstrumentType.Organ;
-
-        // Aktuálně vybraný varhanní rejstřík (preset). Používá se jen když
-        // CurrentInstrument == InstrumentType.Organ. Časem půjde přepínat
-        // na kterýkoliv z desítek presetů (_002_..., _003_... atd.).
-        public VoicePreset CurrentOrganPreset { get; set; } = _001_Bombard16Preset.Preset;
 
         public ToneEngine(double sampleRate = 44100.0)
         {
             _sampleRate = sampleRate;
+        }
+
+        // =========================================================================
+        // 0. REGISTRACE (zatahování/zatlačování rejstříků)
+        // =========================================================================
+
+        // Zatáhne rejstřík (přidá ho mezi aktivní), pokud tam ještě není.
+        public void EnableRegister(VoicePreset register)
+        {
+            lock (_lock)
+            {
+                if (!_activeRegisters.Contains(register))
+                {
+                    _activeRegisters.Add(register);
+                }
+            }
+        }
+
+        // Zatlačí rejstřík zpět (odebere ho z aktivních).
+        public void DisableRegister(VoicePreset register)
+        {
+            lock (_lock)
+            {
+                _activeRegisters.Remove(register);
+            }
+        }
+
+        // Vypne všechny rejstříky a zatáhne jen ten jeden zadaný -
+        // pohodlná zkratka pro "hraj teď jenom tohle".
+        public void SetSoleRegister(VoicePreset register)
+        {
+            lock (_lock)
+            {
+                _activeRegisters.Clear();
+                _activeRegisters.Add(register);
+            }
+        }
+
+        public IReadOnlyList<VoicePreset> ActiveRegisters
+        {
+            get { lock (_lock) { return _activeRegisters.ToArray(); } }
         }
 
         // =========================================================================
@@ -56,27 +87,30 @@ namespace InvisiblePlayer.Core.ToneEngine
             // TODO (výhledově): zohlednit historickou temperaturu nástroje - viz Temperament.cs
             double freq = 440.0 * Math.Pow(2.0, (noteNumber - 69) / 12.0);
 
-            SynthVoice voice = CreateVoiceForCurrentInstrument();
-            voice.NoteOn();
-
-            // Bezpečné přidání do seznamu pod zámkem
             lock (_lock)
             {
-                _activeNotes.Add(new ActiveNote
+                // Pro každý aktivní (zatažený) rejstřík vytvoříme samostatný hlas.
+                // Všechny znějí současně, přesně jako na skutečných varhanách.
+                foreach (var register in _activeRegisters)
                 {
-                    NoteNumber = noteNumber,
-                    Frequency = freq,
-                    Voice = voice
-                });
+                    SynthVoice voice = CreateVoiceForRegister(register);
+                    voice.NoteOn();
+
+                    _activeNotes.Add(new ActiveNote
+                    {
+                        NoteNumber = noteNumber,
+                        Frequency = freq,
+                        Voice = voice
+                    });
+                }
             }
         }
 
-        // Vytvoří novou instanci hlasu podle právě vybraného nástroje.
-        // Sem stačí přidat "case" pro každý další nástroj (varhany budou mít
-        // vždycky jen jeden case - Organ - protože rejstřík řeší CurrentOrganPreset).
-        private SynthVoice CreateVoiceForCurrentInstrument()
+        // Vytvoří novou instanci hlasu podle toho, jaký Instrument daný preset má.
+        // Sem stačí přidat "case", až přibude další zvukový engine.
+        private SynthVoice CreateVoiceForRegister(VoicePreset register)
         {
-            switch (CurrentInstrument)
+            switch (register.Instrument)
             {
                 case InstrumentType.Piano:
                     return new PianoVoice(_sampleRate);
@@ -89,7 +123,7 @@ namespace InvisiblePlayer.Core.ToneEngine
 
                 case InstrumentType.Organ:
                 default:
-                    return new OrganVoice(CurrentOrganPreset, _sampleRate);
+                    return new OrganVoice(register, _sampleRate);
             }
         }
 
@@ -140,7 +174,6 @@ namespace InvisiblePlayer.Core.ToneEngine
         }
     }
 }
-
 
 
 
