@@ -44,6 +44,7 @@ namespace InvisiblePlayer.Core.ToneEngine
                         * Math.Pow(2.0, _temperament.CentOffset(noteNumber) / 1200.0);
 
             // Vytvoříme nový hlas pro tento tón načtením presetu Bombard 16'
+            var engine = new ToneEngine(44100.0, Temperament.MelzerGeorgKratkyI);
             var voice = new OrganVoice(_001_Bombard16Preset.Preset, _sampleRate);
             voice.NoteOn();
 
