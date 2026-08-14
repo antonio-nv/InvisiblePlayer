@@ -9,9 +9,24 @@
         WhiteNoise  // Bílý šum (perkuse, fuk varhan)
     }
 
+    // Který "zvukový engine" má preset použít. Výchozí je Organ, takže všechny
+    // dosavadní presety (Bombard, Piano...) zůstávají beze změny funkční.
+    public enum InstrumentType
+    {
+        Organ,
+        Piano,
+        Cembalo,
+        Bell
+    }
+
     public class VoicePreset
     {
         public string Name { get; set; } = "Default";
+
+        // Který nástroj/engine preset používá. U Piano/Cembalo/Bell presetů
+        // se pole Harmonics atd. zatím nevyužívají - ty mají svůj zvuk
+        // "zadrátovaný" přímo ve třídě (PianoVoice, CembaloVoice, BellVoice).
+        public InstrumentType Instrument { get; set; } = InstrumentType.Organ;
 
         // Tabulka alikvót: (poměr frekvence, hlasitost)
         public (double FrequencyMultiplier, double Amplitude)[] Harmonics { get; set; }
