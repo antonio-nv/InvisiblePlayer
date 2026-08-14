@@ -2,7 +2,7 @@
 
 namespace InvisiblePlayer.Core.Tones
 {
-    public static class _200_Piano
+    public static class _200_Piano_Petrof
     {
         public static VoicePreset Preset => new VoicePreset
         {
