@@ -57,6 +57,10 @@ namespace InvisiblePlayer.UI.Windows
         private ToneEngine? _toneEngine;
         private AudioEngine? _audioEngine;
 
+        // Statická reference, aby k aktuálnímu AudioEngine (varhany) mohly
+        // přistoupit i jiné statické třídy jako VgaEngine (pro VU metr).
+        public static AudioEngine? OrganEngine { get; private set; }
+
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -68,6 +72,8 @@ namespace InvisiblePlayer.UI.Windows
             // Pokud AudioEngine přijímá generátor zvuku:
             _audioEngine = new AudioEngine(_toneEngine);
             _audioEngine.Start();
+
+            OrganEngine = _audioEngine;
 
             // 2. INICIALIZACE CORE INPUTU (Živé piano z USB / Casio)
             _inputManager = new InputManager();

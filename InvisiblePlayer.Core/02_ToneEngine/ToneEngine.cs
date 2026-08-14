@@ -27,6 +27,23 @@ namespace InvisiblePlayer.Core.ToneEngine
         // Zámek chránící seznam před konfliktem MIDI vlákna a Audio vlákna
         private readonly object _lock = new object();
 
+        // Základní zesílení výstupu. Žádné tvarování signálu (tanh apod.) záměrně
+        // nepoužíváme - pro spektrální analýzu potřebujeme signál beze zkreslení.
+        // Hlasitost jednotlivých rejstříků se řeší přímo amplitudami v presetu.
+        private const double MasterGain = 0.3;
+
+        // Exponent kompenzace podle počtu znějících hlasů (viz GenerateNextMixSample).
+        // 0.5 = kompenzace podle druhé odmocniny (fyzikálně odpovídá součtu N nezávislých
+        // /nekorelovaných/ zdrojů zvuku - stejně jako reálné píšťaly).
+        // 0.0 = žádná kompenzace (chování jako dřív). 1.0 = plná lineární rezerva (1/N),
+        // nejbezpečnější, ale poroste hlasitost s přidávanými hlasy nejméně.
+        private const double PolyphonyCompensationExponent = 0.5;
+
+        // Nastaví se na true, pokud poslední vygenerovaný vzorek přesáhl rozsah
+        // -1.0..1.0 (tedy Math.Clamp ho musel oříznout). Slouží jako podklad pro
+        // "clip" indikátor ve VU metru - přesnější než jen sledovat dB hodnotu okem.
+        public bool ClipDetected { get; private set; }
+
         public ToneEngine(double sampleRate = 44100.0, Temperament? temperament = null)
         {
             _sampleRate = sampleRate;
@@ -43,14 +60,24 @@ namespace InvisiblePlayer.Core.ToneEngine
             double freq = 440.0 * Math.Pow(2.0, (noteNumber - 69) / 12.0)
                         * Math.Pow(2.0, _temperament.CentOffset(noteNumber) / 1200.0);
 
-            // Vytvoříme nový hlas pro tento tón načtením presetu Bombard 16'
-            var engine = new ToneEngine(44100.0, Temperament.MelzerGeorgKratkyI);
-            var voice = new OrganVoice(_001_Bombard16Preset.Preset, _sampleRate);
-            voice.NoteOn();
-
-            // Bezpečné přidání do seznamu pod zámkem
             lock (_lock)
             {
+                // Pokud tenhle tón už hraje (rychlé opakování / opětovný NoteOn dřív, než
+                // doznělo předchozí spuštění), NEVYTVÁŘÍME druhou překrývající se instanci
+                // (ta způsobovala náhodné "přeladění" zvuku fázovým rušením). Místo toho
+                // jen znovu spustíme (retrigger) tu existující.
+                var existing = _activeBombardNotes.Find(n => n.NoteNumber == noteNumber);
+                if (existing != null)
+                {
+                    existing.Voice.NoteOn();
+                    existing.Frequency = freq;
+                    return;
+                }
+
+                // Vytvoříme nový hlas pro tento tón načtením presetu Bombard 16'
+                var voice = new OrganVoice(_001_Bombard16Preset.Preset, _sampleRate);
+                voice.NoteOn();
+
                 _activeBombardNotes.Add(new ActiveNote
                 {
                     NoteNumber = noteNumber,
@@ -82,9 +109,12 @@ namespace InvisiblePlayer.Core.ToneEngine
         public double GenerateNextMixSample()
         {
             double mixedSample = 0.0;
+            int voiceCount;
 
             lock (_lock)
             {
+                voiceCount = _activeBombardNotes.Count;
+
                 for (int i = _activeBombardNotes.Count - 1; i >= 0; i--)
                 {
                     var activeNote = _activeBombardNotes[i];
@@ -104,11 +134,22 @@ namespace InvisiblePlayer.Core.ToneEngine
                 }
             }
 
-            return Math.Clamp(mixedSample * 0.3, -1.0, 1.0);
+            // PREVENTIVNÍ KOMPENZACE PODLE POČTU ZNĚJÍCÍCH HLASŮ:
+            // N vzájemně fázově nezávislých zdrojů zvuku (různé píšťaly/rejstříky, žádná
+            // pevná fázová vazba mezi nimi) se energeticky sčítá přibližně jako √N, ne
+            // lineárně jako N. Kompenzací 1/√N proto vyrovnáme očekávaný nárůst hlasitosti
+            // PŘEDEM, dřív než dojde k ořezu - místo aby limiter/clamp zasahoval až samotné
+            // zkreslení bylo slyšet. Tvrdý Math.Clamp níže zůstává jako poslední pojistka
+            // pro výjimečné fázové shody (např. útok/chiff), ne jako běžný způsob řešení.
+            double compensation = voiceCount > 1
+                ? 1.0 / Math.Pow(voiceCount, PolyphonyCompensationExponent)
+                : 1.0;
+
+            double gained = mixedSample * MasterGain * compensation;
+
+            ClipDetected = gained > 1.0 || gained < -1.0;
+
+            return Math.Clamp(gained, -1.0, 1.0);
         }
     }
 }
-
-
-
- 

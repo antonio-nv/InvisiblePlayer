@@ -187,8 +187,17 @@ namespace InvisiblePlayer.UI.Windows
                 if (!_isMidiMode)
                 {
                     var (peakL, peakR) = _audioPlayer.ReadPeakLevels();
-                    _leftDb = AudioMeter.LinearToDecibels(peakL);
-                    _rightDb = AudioMeter.LinearToDecibels(peakR);
+
+                    // Přidáno: úroveň živě hraných varhan (mono) - promítne se do obou
+                    // kanálů, pokud je v tu chvíli hlasitější než přehrávaný soubor.
+                    // Když je přehrávání pozastavené (peakL/peakR = 0), ukáže VU metr
+                    // čistě hru na varhany.
+                    float organPeak = App.OrganEngine?.ReadPeak() ?? 0f;
+                    float combinedL = Math.Max(peakL, organPeak);
+                    float combinedR = Math.Max(peakR, organPeak);
+
+                    _leftDb = AudioMeter.LinearToDecibels(combinedL);
+                    _rightDb = AudioMeter.LinearToDecibels(combinedR);
                     RenderMetersOnly();
                 }
                 else
