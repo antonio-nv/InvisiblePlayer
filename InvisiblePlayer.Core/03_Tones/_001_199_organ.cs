@@ -2,8 +2,7 @@
 
 namespace InvisiblePlayer.Core.Tones
 {
-    public static class _001_Bombard16Preset
-    {
+    public static class _001_Bombard16     {
         public static VoicePreset Preset => new VoicePreset
         {
             // TADY JE TA ZMĚNA: Přidat přesný typ pole
@@ -20,6 +19,25 @@ namespace InvisiblePlayer.Core.Tones
             ModDepth = 0.08
         };
     }
+
+    public static class _002_ViolnBas16 { 
+            public static VoicePreset Preset => new VoicePreset
+        {
+            // TADY JE TA ZMĚNA: Přidat přesný typ pole
+            Name = "ViolnBas16",
+            Number = 02,
+            Harmonics = new (double Ratio, double Amp)[]
+            {
+                (1.0, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
+            },
+            ChiffFilterFreqHz = 800.0,
+            ChiffFilterQ = 1.2,
+            ModType = ModulationType.AM,
+            ModSpeedHz = 5.5,
+            ModDepth = 0.08
+        };
+    }
+
     public static class _085_Aeolus
     {
         // Stejně jako u Cembalo presetu - zvuk je "zadrátovaný" v BellVoice,
@@ -46,5 +64,11 @@ namespace InvisiblePlayer.Core.Tones
             ModDepth = 0.08
         };
     }
+
+   
+
+
+
+
 
 }

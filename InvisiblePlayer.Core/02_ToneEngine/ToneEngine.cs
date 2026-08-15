@@ -52,11 +52,12 @@ namespace InvisiblePlayer.Core.ToneEngine
         {
             var presets = new VoicePreset[]
             {
-                _001_Bombard16Preset.Preset,
+                _001_Bombard16.Preset,
+                _002_ViolnBas16.Preset,
                 _085_Aeolus.Preset,
                 _200_Piano_Petrof.Preset,
                 _300_Cembalo_RandallHopkirk.Preset,
-                _400_Bell_Zikmund.Preset,
+                _400_Zvon_Zikmund.Preset,
             };
 
             var dict = new Dictionary<int, VoicePreset>();
