@@ -7,8 +7,8 @@ namespace InvisiblePlayer.Core.Tones
         public static VoicePreset Preset => new VoicePreset
         {
             // TADY JE TA ZMĚNA: Přidat přesný typ pole
-            Name = "Aeolus",
-            Number = 85,
+            Name = "Bombard16Preset",
+            Number = 01,
             Harmonics = new (double Ratio, double Amp)[]
             {
                 (1.0, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
@@ -33,6 +33,12 @@ namespace InvisiblePlayer.Core.Tones
             {
                 (0.501, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
             },
+
+            // Vlastní partiály - klidně i jiný počet než výchozích 7
+            PartialRatios = new[] { 0.50, 1.00, 1.19, 1.55, 2.02, 2.60 },
+            PartialAmplitudes = new[] { 0.40, 0.60, 0.35, 0.30, 0.55, 0.15 },
+            PartialDecayRates = new[] { 0.15, 0.30, 0.60, 0.75, 0.40, 1.20 },
+
             ChiffFilterFreqHz = 800.0,
             ChiffFilterQ = 1.2,
             ModType = ModulationType.FM,

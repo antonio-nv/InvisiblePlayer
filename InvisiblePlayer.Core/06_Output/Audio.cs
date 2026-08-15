@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using InvisiblePlayer.Core.Generators;
 using InvisiblePlayer.Core.ToneEngine;
 using NAudio.Wave;
@@ -58,19 +59,16 @@ namespace InvisiblePlayer.Core.Output
         /// </summary>
         public int Read(byte[] buffer, int offset, int count)
         {
-            // Přepočet počtu bytů na float vzorky (1 Float = 4 Byty)
             int sampleCount = count / 4;
             var waveBuffer = new WaveBuffer(buffer);
 
             for (int i = 0; i < sampleCount; i++)
             {
-                // Získáme namixovaný vzorek z našeho syntetizéru (-1.0f až +1.0f)
                 float sample = (float)_synth.GenerateNextMixSample();
 
                 float abs = Math.Abs(sample);
                 if (abs > _peakSinceLastRead) _peakSinceLastRead = abs;
 
-                // Zapíšeme do NAudio bufferu
                 waveBuffer.FloatBuffer[offset / 4 + i] = sample;
             }
 
@@ -93,6 +91,15 @@ namespace InvisiblePlayer.Core.Output
         /// (tedy došlo k oříznutí). Průchozí hodnota ze ToneEngine.
         /// </summary>
         public bool ClipDetected => _synth.ClipDetected;
+
+        // --- Průchozí ovládání rejstříků (pro VGA panel / budoucí UI) ---
+
+        /// <summary>Přepne rejstřík ON/OFF podle čísla. Vrací nový stav (true = ON).</summary>
+        public bool ToggleRegister(int number) => _synth.ToggleRegister(number);
+
+        public bool IsRegisterActive(int number) => _synth.IsRegisterActive(number);
+
+        public IReadOnlyCollection<int> ActiveRegisters => _synth.ActiveRegisters;
 
         public void Dispose()
         {

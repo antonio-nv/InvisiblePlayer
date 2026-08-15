@@ -20,6 +20,9 @@ namespace InvisiblePlayer.UI.Windows
         private static bool[] _channelMuted = new bool[16];
         private static bool _isMidiMode = false;
 
+        // Buffer pro číselné zadávání čísla rejstříku (viz HandleInput / RenderMetersOnly)
+        private static readonly StringBuilder _registerInputBuffer = new StringBuilder();
+
         #region Windows API pro konzoli a myš
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -188,10 +191,10 @@ namespace InvisiblePlayer.UI.Windows
                 {
                     var (peakL, peakR) = _audioPlayer.ReadPeakLevels();
 
-                    // Přidáno: úroveň živě hraných varhan (mono) - promítne se do obou
-                    // kanálů, pokud je v tu chvíli hlasitější než přehrávaný soubor.
-                    // Když je přehrávání pozastavené (peakL/peakR = 0), ukáže VU metr
-                    // čistě hru na varhany.
+                    // Úroveň živě hraných varhan (mono) - promítne se do obou kanálů,
+                    // pokud je v tu chvíli hlasitější než přehrávaný soubor. Když je
+                    // přehrávání pozastavené (peakL/peakR = 0), ukáže VU metr čistě
+                    // hru na varhany.
                     float organPeak = App.OrganEngine?.ReadPeak() ?? 0f;
                     float combinedL = Math.Max(peakL, organPeak);
                     float combinedR = Math.Max(peakR, organPeak);
@@ -272,9 +275,60 @@ namespace InvisiblePlayer.UI.Windows
 
         private static bool HandleInput(ConsoleKey key)
         {
+            // --- Číselné zadávání čísla rejstříku (jen mimo MIDI režim) ---
+            if (!_isMidiMode)
+            {
+                if (key >= ConsoleKey.D0 && key <= ConsoleKey.D9)
+                {
+                    if (_registerInputBuffer.Length < 3)
+                    {
+                        _registerInputBuffer.Append((char)('0' + (key - ConsoleKey.D0)));
+                    }
+                    return true;
+                }
+
+                if (key >= ConsoleKey.NumPad0 && key <= ConsoleKey.NumPad9)
+                {
+                    if (_registerInputBuffer.Length < 3)
+                    {
+                        _registerInputBuffer.Append((char)('0' + (key - ConsoleKey.NumPad0)));
+                    }
+                    return true;
+                }
+
+                if (key == ConsoleKey.Backspace)
+                {
+                    if (_registerInputBuffer.Length > 0)
+                    {
+                        _registerInputBuffer.Length--;
+                    }
+                    return true;
+                }
+
+                if (key == ConsoleKey.Enter)
+                {
+                    if (_registerInputBuffer.Length > 0)
+                    {
+                        if (int.TryParse(_registerInputBuffer.ToString(), out int registerNumber))
+                        {
+                            App.OrganEngine?.ToggleRegister(registerNumber);
+                        }
+                        _registerInputBuffer.Clear();
+                    }
+                    return true;
+                }
+            }
+
             switch (key)
             {
                 case ConsoleKey.Escape:
+                    // Pokud se právě píše číslo, Escape ho jen zruší - neukončuje
+                    // celou konzoli. Teprve Escape na prázdném vstupu aplikaci ukončí.
+                    if (_registerInputBuffer.Length > 0)
+                    {
+                        _registerInputBuffer.Clear();
+                        return true;
+                    }
                     return false;
 
                 case ConsoleKey.Spacebar:
@@ -415,6 +469,27 @@ namespace InvisiblePlayer.UI.Windows
             Console.Write(barR);
             Console.ResetColor();
             Console.WriteLine($"] {_rightDb,6:F1} dB");
+
+            // --- Zadávání čísla rejstříku + přehled aktivních rejstříků ---
+            Console.Write(" Rejstřík č.: [");
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write(_registerInputBuffer.ToString().PadRight(3));
+            Console.ResetColor();
+            Console.WriteLine("]  (piš číslo, Enter = ON/OFF, Backspace = smaž, Esc = zruš)   ");
+
+            Console.Write(" Aktivní rejstříky: ");
+            var active = App.OrganEngine?.ActiveRegisters;
+            if (active != null && active.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write(string.Join(", ", active));
+                Console.ResetColor();
+                Console.WriteLine("                                                        ");
+            }
+            else
+            {
+                Console.WriteLine("(žádný)                                                        ");
+            }
         }
 
         private static void RenderMidiStaffOnly()
