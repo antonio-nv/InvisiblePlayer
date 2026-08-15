@@ -22,7 +22,7 @@
     public class VoicePreset
     {
         public string Name { get; set; } = "Default";
-        public int RegisterNumber { get; set; } = -1; // -1 = nepřiřazeno, jinak číslo rejstříku
+        public int Number { get; set; } = -1; // -1 = nepřiřazeno, jinak číslo rejstříku
 
         // Který nástroj/engine preset používá. U Piano/Cembalo/Bell presetů
         // se pole Harmonics atd. zatím nevyužívají - ty mají svůj zvuk

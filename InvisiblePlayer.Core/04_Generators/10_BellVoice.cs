@@ -46,12 +46,33 @@ namespace InvisiblePlayer.Core.Generators
             0.12, 0.35, 0.55, 0.70, 0.45, 1.10, 1.60
         };
 
+        // --- FM "wobble" (nakřáplost) - volitelné, řízené z VoicePreset ---
+        // Výchozí stav (bez presetu / ModType != FM) = beze změny oproti původnímu chování.
+        private double _modPhase = 0.0;
+        private readonly double _modSpeedHz;
+        private readonly double _modDepth;
+        private readonly bool _modEnabled;
+
         public BellVoice(double sampleRate) : base(sampleRate)
         {
             NoteEnvelope.AttackTime = 0.002f;   // Okamžitý úder srdce o plášť
             NoteEnvelope.DecayTime = 3.0f;
             NoteEnvelope.SustainLevel = 0.0f;   // Zvon nemá sustain, jen dozvuk
             NoteEnvelope.ReleaseTime = 2.5f;    // Dlouhý dojezd i po "puštění" (u zvonu spíš teoretické)
+
+            _modEnabled = false;
+        }
+
+        // Nový konstruktor - volitelný, s presetem. Umožňuje řídit FM wobble
+        // (ModType == FM) z VoicePreset, např. pro "nakřáplý" rejstřík č. 85.
+        public BellVoice(VoicePreset preset, double sampleRate) : this(sampleRate)
+        {
+            if (preset != null && preset.ModType == ModulationType.FM)
+            {
+                _modEnabled = true;
+                _modSpeedHz = preset.ModSpeedHz;
+                _modDepth = preset.ModDepth;
+            }
         }
 
         public override void NoteOn()
@@ -62,18 +83,29 @@ namespace InvisiblePlayer.Core.Generators
 
         protected override double CalculateWaveform(double frequency)
         {
+            double effectiveFrequency = frequency;
+
+            if (_modEnabled)
+            {
+                // Pomalé kolísání základní frekvence - aplikuje se na všechny partiály
+                // společně (celý zvon "plave"), ne na každý partiál zvlášť.
+                double modPhase = AdvancePhase(ref _modPhase, 1.0, _modSpeedHz);
+                double modulator = Math.Sin(modPhase * 2.0 * Math.PI);
+                effectiveFrequency = frequency * (1.0 + modulator * _modDepth);
+            }
+
             double sample = 0.0;
 
             for (int i = 0; i < PartialRatios.Length; i++)
             {
-                double phase = AdvancePhase(ref _phases[i], PartialRatios[i], frequency);
+                double phase = AdvancePhase(ref _phases[i], PartialRatios[i], effectiveFrequency);
                 double decay = Math.Exp(-_elapsedSeconds * PartialDecayRates[i]);
                 sample += Math.Sin(phase * 2.0 * Math.PI) * PartialAmplitudes[i] * decay;
             }
 
             // Druhý, mírně rozladěný Nominál - stejná amplituda/dozvuk jako hlavní Nominál (index 4),
             // ale jiná frekvence -> vznikne slyšitelné "vlnění" hlasitosti (beating)
-            double detunedPhase = AdvancePhase(ref _detunedNominalPhase, DetunedNominalRatio, frequency);
+            double detunedPhase = AdvancePhase(ref _detunedNominalPhase, DetunedNominalRatio, effectiveFrequency);
             double nominalDecay = Math.Exp(-_elapsedSeconds * PartialDecayRates[4]);
             sample += Math.Sin(detunedPhase * 2.0 * Math.PI) * PartialAmplitudes[4] * nominalDecay;
 
