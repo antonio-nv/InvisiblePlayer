@@ -19,9 +19,9 @@ namespace InvisiblePlayer.Core.Tones
             },
 
             // Vlastní partiály - klidně i jiný počet než výchozích 7
-            PartialRatios = new[] { 0.40, 1.30, 1.19, 1.55, 2.02, 2.60 },
-            PartialAmplitudes = new[] { 0.40, 0.60, 0.35, 0.30, 0.55, 0.15 },
-            PartialDecayRates = new[] { 0.05, 0.030, 0.60, 0.75, 0.40, 1.20 },
+            PartialRatios = new[] { 0.500, 1.0, 1.2, 1,5, 2.0, 3.0 },
+            PartialAmplitudes = new[] { 0.20, 0.60, 0.35, 0.30, 0.55, 0.15 },
+            PartialDecayRates = new[] { 0.5, 0.6, 0.6, 0.75, 0.8, 0.9 },
 
             ChiffFilterFreqHz = 800.0,
             ChiffFilterQ = 1.2,

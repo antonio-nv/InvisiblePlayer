@@ -8,8 +8,11 @@ namespace InvisiblePlayer.Core.Generators
         protected readonly AdsrEnvelope NoteEnvelope = new AdsrEnvelope();
         protected bool HasStarted = false;
 
-        // Konec tónu: Až po stisku (HasStarted) a doznění obálky (Idle)
-        public bool IsFinished => HasStarted && !NoteEnvelope.IsActive;
+        // Konec tónu: Až po stisku (HasStarted) a doznění obálky (Idle).
+        // VIRTUAL - nástroje s vlastním fyzikálním modelem dozvuku (Bell, Cembalo)
+        // si tohle mohou rozšířit o vlastní podmínku (pokles pod práh v dB),
+        // místo aby konec tónu určovala jen sdílená ADSR obálka.
+        public virtual bool IsFinished => HasStarted && !NoteEnvelope.IsActive;
 
         protected SynthVoice(double sampleRate)
         {

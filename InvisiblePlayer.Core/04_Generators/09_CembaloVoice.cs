@@ -10,61 +10,50 @@ namespace InvisiblePlayer.Core.Generators
     ///  1) BRNKNUTÍ BRČKEM (plectrum) - ostrý, velmi krátký šumový "click" na začátku,
     ///     mnohem kratší a "sušší" než úder klavírního kladívka.
     ///  2) NEZÁVISLÉ DOZNÍVÁNÍ HARMONICKÝCH - u brnkané struny odeznívají vyšší
-    ///     harmonické mnohem rychleji než základní tón (na rozdíl od klavíru, kde
-    ///     odeznívají víc "společně").
+    ///     harmonické mnohem rychleji než základní tón.
     ///
-    /// Amplitudy harmonických, jejich rychlosti dozvuku a ADSR obálku lze volitelně
-    /// přepsat z VoicePreset (viz konstruktor s parametrem preset).
+    /// DŮLEŽITÁ ZMĚNA: dokud klávesu držíš, sdílená ADSR obálka po náběhu zůstává
+    /// na hladině 1.0 a neklesá - o doznívání se stará VÝHRADNĚ fyzikální model
+    /// (amplitudy + rychlosti dozvuku). Teprve puštění klávesy spustí Release,
+    /// coby přiblížení reálné dušičce (damperu), která strunu rychle utlumí.
+    /// Kromě toho konec tónu hlídá i pokles pod práh -90 dB (kdybys klávesu držel
+    /// dlouho poté, co je zvuk fyzicky už neslyšitelný).
     /// </summary>
     public class CembaloVoice : SynthVoice
     {
         private readonly double[] _phases = new double[6];
 
-        // Amplitudy a rychlosti dozvuku - VLASTNÍ KOPIE pro tuhle instanci (.Clone()),
-        // ne sdílená reference na Default pole (viz vysvětlení v PianoVoice.cs).
         private readonly double[] _amplitudes;
         private readonly double[] _decayRatesPerSec;
 
-        // Kolik sekund uplynulo od NoteOn - používá se pro nezávislé dozvuky harmonických
         private double _elapsedSeconds = 0.0;
 
-        // Výchozí hodnoty - cembalo je bohatší na vyšší harmonické než klavír
         private static readonly double[] DefaultAmplitudes = { 1.0, 0.7, 0.55, 0.4, 0.3, 0.2 };
-        // Čím vyšší harmonická, tím rychleji sama odezní (nezávisle na hlavní ADSR obálce)
         private static readonly double[] DefaultDecayRatesPerSec = { 1.0, 2.2, 3.5, 5.0, 7.0, 9.5 };
+
+        // --- Konec tónu podle prahu, ne (jen) podle pevného času ---
+        private const double SilenceThresholdDb = -90.0;
+        private static readonly double SilenceThresholdLinear = Math.Pow(10.0, SilenceThresholdDb / 20.0);
+        private double _lastPeakPartialLevel = 1.0;
 
         // Pluck (brnknutí) - krátký ostrý šumový impuls
         private double _pluckEnvelope = 1.0;
         private readonly NoiseGenerator _pluckNoise = new NoiseGenerator();
         private readonly BandPassFilter _pluckFilter = new BandPassFilter();
-        private const double PluckDurationSec = 0.004; // 4 ms - ostřejší než klavírní kladívko
+        private const double PluckDurationSec = 0.004;
 
         public CembaloVoice(double sampleRate) : base(sampleRate)
         {
-            NoteEnvelope.AttackTime = 0.001f;  // Prakticky okamžitý náběh
-            NoteEnvelope.DecayTime = 0.9f;
-            NoteEnvelope.SustainLevel = 0.0f;  // Cembalo nemá sustain - struna jen doznívá
-            NoteEnvelope.ReleaseTime = 0.12f;
-
             _amplitudes = (double[])DefaultAmplitudes.Clone();
             _decayRatesPerSec = (double[])DefaultDecayRatesPerSec.Clone();
 
-            _pluckFilter.SetParams(3800.0, 2.0, sampleRate); // vyšší a užší než u klavíru
+            ConfigureEnvelope();
+
+            _pluckFilter.SetParams(3800.0, 2.0, sampleRate);
         }
 
-        // Nový konstruktor - s presetem. preset.Harmonics přepíše amplitudy,
-        // preset.PartialDecayRates (stejné pole jako u BellVoice, jen znovu použité
-        // pro jiný účel - rychlost dozvuku každé harmonické) přepíše dozvuky.
         public CembaloVoice(VoicePreset preset, double sampleRate) : this(sampleRate)
         {
-            if (preset?.Envelope != null)
-            {
-                NoteEnvelope.AttackTime = preset.Envelope.AttackTime;
-                NoteEnvelope.DecayTime = preset.Envelope.DecayTime;
-                NoteEnvelope.SustainLevel = preset.Envelope.SustainLevel;
-                NoteEnvelope.ReleaseTime = preset.Envelope.ReleaseTime;
-            }
-
             if (preset?.Harmonics != null && preset.Harmonics.Length == _amplitudes.Length)
             {
                 for (int i = 0; i < _amplitudes.Length; i++)
@@ -80,6 +69,19 @@ namespace InvisiblePlayer.Core.Generators
                     _decayRatesPerSec[i] = preset.PartialDecayRates[i];
                 }
             }
+
+            // preset?.Envelope se tu záměrně nepoužívá - obálka je teď pevně daná
+            // ConfigureEnvelope() (náběh + hold na 1.0), aby doznívání řídil čistě
+            // fyzikální model. Kdybys chtěl jiný Release (rychlost dušičky), uprav
+            // hodnotu přímo v ConfigureEnvelope(), ne přes preset.
+        }
+
+        private void ConfigureEnvelope()
+        {
+            NoteEnvelope.AttackTime = 0.001f;  // Prakticky okamžitý náběh
+            NoteEnvelope.DecayTime = 0.01f;    // Rychle "usedne" na sustain
+            NoteEnvelope.SustainLevel = 1.0f;  // ...a dál drží 1.0 - neklesá sama
+            NoteEnvelope.ReleaseTime = 0.12f;  // Puštění klávesy = dušička (damper)
         }
 
         public override void NoteOn()
@@ -87,11 +89,16 @@ namespace InvisiblePlayer.Core.Generators
             base.NoteOn();
             _elapsedSeconds = 0.0;
             _pluckEnvelope = 1.0;
+            _lastPeakPartialLevel = 1.0;
         }
+
+        public override bool IsFinished =>
+            base.IsFinished || (HasStarted && _lastPeakPartialLevel < SilenceThresholdLinear);
 
         protected override double CalculateWaveform(double frequency)
         {
             double sample = 0.0;
+            double peakLevel = 0.0;
 
             for (int i = 0; i < _phases.Length; i++)
             {
@@ -99,9 +106,14 @@ namespace InvisiblePlayer.Core.Generators
                 double phase = AdvancePhase(ref _phases[i], harmonicNumber, frequency);
 
                 double individualDecay = Math.Exp(-_elapsedSeconds * _decayRatesPerSec[i]);
-                sample += Math.Sin(phase * 2.0 * Math.PI) * _amplitudes[i] * individualDecay;
+                double level = _amplitudes[i] * individualDecay;
+
+                sample += Math.Sin(phase * 2.0 * Math.PI) * level;
+
+                if (level > peakLevel) peakLevel = level;
             }
 
+            _lastPeakPartialLevel = peakLevel;
             sample *= 0.35;
 
             // Pluck - ostrý krátký "click" na začátku

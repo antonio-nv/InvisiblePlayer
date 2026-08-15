@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 
 namespace InvisiblePlayer.Core.Generators
 {
@@ -15,9 +14,12 @@ namespace InvisiblePlayer.Core.Generators
     ///   Kvinta  (~1.5x)
     ///   Nominál (2.0x)   - nejsilnější partiál, ten, který ucho vnímá jako "výšku" zvonu
     ///
-    /// Partiály jsou od teď konfigurovatelné přes VoicePreset (viz konstruktor
-    /// s parametrem preset) - když preset nic nevyplní, použije se výchozí
-    /// obecný model zvonu (hodnoty níže, DefaultPartial*).
+    /// DŮLEŽITÁ ZMĚNA: sdílená ADSR obálka (NoteEnvelope) už neurčuje doznívání -
+    /// po rychlém náběhu zůstává na hladině 1.0 a NEKLESÁ. O skutečné doznívání se
+    /// stará VÝHRADNĚ tenhle fyzikální model (PartialDecayRates). Konec tónu určuje
+    /// pokles skutečné hladiny signálu pod práh SilenceThresholdDb (-90 dB), ne
+    /// pevně daný čas. Zvon navíc ignoruje NoteOff (viz override níže) - jednou
+    /// udeřený zvon dozní sám, bez ohledu na to, jestli klávesu ještě držíš.
     ///
     /// Navíc: typické "vlnění/třepotání" (beating) velkých zvonů vzniká, když zvon
     /// není dokonale osově symetrický - dvě velmi blízké frekvence (např. dva mírně
@@ -25,7 +27,7 @@ namespace InvisiblePlayer.Core.Generators
     /// </summary>
     public class BellVoice : SynthVoice
     {
-        private readonly double[] _phases;
+        private readonly double[] _phases = new double[7];
         private double _elapsedSeconds = 0.0;
 
         // Poměry, amplitudy a rychlosti dozvuku partiálů - buď z presetu, nebo výchozí.
@@ -47,15 +49,20 @@ namespace InvisiblePlayer.Core.Generators
             0.12, 0.35, 0.55, 0.70, 0.45, 1.10, 1.60
         };
 
-        // Index Nominálu ve výchozím poli (pro efekt beatingu, viz níže) - u výchozího
-        // modelu je to index 4. Pokud preset dodá vlastní pole jiné délky/pořadí,
-        // beating se váže na tenhle stejný index - dej pozor, ať v presetu odpovídá
-        // taky Nominálu, jinak bude "vlnit" jiný partiál, než čekáš.
         private const int NominalIndex = 4;
 
         // Druhý, mírně rozladěný Nominál pro efekt "vlnění" (beating)
         private const double DetunedNominalRatio = 2.006;
         private double _detunedNominalPhase = 0.0;
+
+        // --- Konec tónu podle prahu, ne podle pevného času ---
+        // -90 dB = běžně používaný práh "prakticky ticho" (linearně cca 0,0000316).
+        private const double SilenceThresholdDb = -90.0;
+        private static readonly double SilenceThresholdLinear = Math.Pow(10.0, SilenceThresholdDb / 20.0);
+
+        // Nejhlasitější aktuálně dozvučující partiál - aktualizuje se každý vzorek
+        // v CalculateWaveform, čte se v IsFinished.
+        private double _lastPeakPartialLevel = 1.0;
 
         // --- FM "wobble" (nakřáplost) - volitelné, řízené z VoicePreset ---
         private double _modPhase = 0.0;
@@ -70,16 +77,11 @@ namespace InvisiblePlayer.Core.Generators
             _partialDecayRates = DefaultPartialDecayRates;
             _phases = new double[_partialRatios.Length];
 
-            NoteEnvelope.AttackTime = 0.002f;   // Okamžitý úder srdce o plášť
-            NoteEnvelope.DecayTime = 3.0f;
-            NoteEnvelope.SustainLevel = 0.0f;   // Zvon nemá sustain, jen dozvuk
-            NoteEnvelope.ReleaseTime = 2.5f;    // Dlouhý dojezd i po "puštění" (u zvonu spíš teoretické)
+            ConfigureEnvelope();
 
             _modEnabled = false;
         }
 
-        // Nový konstruktor - s presetem. Umožňuje přepsat partiály i FM wobble
-        // (ModType == FM) z VoicePreset, např. pro rejstřík č. 85 (Aeolus).
         public BellVoice(VoicePreset preset, double sampleRate) : base(sampleRate)
         {
             bool customPartials =
@@ -99,10 +101,8 @@ namespace InvisiblePlayer.Core.Generators
             {
                 if (preset?.PartialRatios != null || preset?.PartialAmplitudes != null || preset?.PartialDecayRates != null)
                 {
-                    // Preset se o vlastní partiály pokusil, ale pole nesedí délkou
-                    // (nebo některé chybí) - raději spadneme na bezpečný výchozí model,
-                    // než abychom za běhu spadli na IndexOutOfRange.
-                    Debug.WriteLine($"[BellVoice] Preset '{preset?.Name}' má nekompletní/nesouhlasící partiály (Ratios/Amplitudes/DecayRates musí mít stejnou délku) - použit výchozí model zvonu.");
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[BellVoice] Preset '{preset?.Name}' má nekompletní/nesouhlasící partiály - použit výchozí model zvonu.");
                 }
 
                 _partialRatios = DefaultPartialRatios;
@@ -112,10 +112,7 @@ namespace InvisiblePlayer.Core.Generators
 
             _phases = new double[_partialRatios.Length];
 
-            NoteEnvelope.AttackTime = 0.002f;
-            NoteEnvelope.DecayTime = 3.0f;
-            NoteEnvelope.SustainLevel = 0.0f;
-            NoteEnvelope.ReleaseTime = 2.5f;
+            ConfigureEnvelope();
 
             if (preset != null && preset.ModType == ModulationType.FM)
             {
@@ -125,11 +122,35 @@ namespace InvisiblePlayer.Core.Generators
             }
         }
 
+        private void ConfigureEnvelope()
+        {
+            // Obálka teď slouží JEN k rychlému náběhu (úder srdce o plášť).
+            // SustainLevel = 1.0 a minimální DecayTime znamená, že po náběhu
+            // zůstane na hladině 1.0 a dál neklesá - o doznívání se stará
+            // výhradně fyzikální model partiálů (PartialDecayRates).
+            NoteEnvelope.AttackTime = 0.002f;
+            NoteEnvelope.DecayTime = 0.01f;
+            NoteEnvelope.SustainLevel = 1.0f;
+            NoteEnvelope.ReleaseTime = 2.5f; // fakticky nevyužito, viz NoteOff() níže
+        }
+
         public override void NoteOn()
         {
             base.NoteOn();
             _elapsedSeconds = 0.0;
+            _lastPeakPartialLevel = 1.0;
         }
+
+        // Zvon ignoruje puštění klávesy - jednou udeřený zvon dozní sám podle
+        // vlastní fyziky, bez ohledu na to, jak dlouho klávesu držíš. Skutečné
+        // ukončení hlasu řeší IsFinished (práh -90 dB) níže, ne Release.
+        public override void NoteOff()
+        {
+            // Záměrně prázdné.
+        }
+
+        public override bool IsFinished =>
+            base.IsFinished || (HasStarted && _lastPeakPartialLevel < SilenceThresholdLinear);
 
         protected override double CalculateWaveform(double frequency)
         {
@@ -137,33 +158,37 @@ namespace InvisiblePlayer.Core.Generators
 
             if (_modEnabled)
             {
-                // Pomalé kolísání základní frekvence - aplikuje se na všechny partiály
-                // společně (celý zvon "plave"), ne na každý partiál zvlášť.
                 double modPhase = AdvancePhase(ref _modPhase, 1.0, _modSpeedHz);
                 double modulator = Math.Sin(modPhase * 2.0 * Math.PI);
                 effectiveFrequency = frequency * (1.0 + modulator * _modDepth);
             }
 
             double sample = 0.0;
+            double peakLevel = 0.0;
 
             for (int i = 0; i < _partialRatios.Length; i++)
             {
                 double phase = AdvancePhase(ref _phases[i], _partialRatios[i], effectiveFrequency);
                 double decay = Math.Exp(-_elapsedSeconds * _partialDecayRates[i]);
-                sample += Math.Sin(phase * 2.0 * Math.PI) * _partialAmplitudes[i] * decay;
+                double level = _partialAmplitudes[i] * decay;
+
+                sample += Math.Sin(phase * 2.0 * Math.PI) * level;
+
+                if (level > peakLevel) peakLevel = level;
             }
 
-            // Druhý, mírně rozladěný Nominál - stejná amplituda/dozvuk jako hlavní Nominál,
-            // ale jiná frekvence -> vznikne slyšitelné "vlnění" hlasitosti (beating).
-            // Použije se, jen pokud preset skutečně má partiál na NominalIndex (tj.
-            // pole je dost dlouhé) - jinak by přístup mimo rozsah pole spadl.
             if (_partialRatios.Length > NominalIndex)
             {
                 double detunedPhase = AdvancePhase(ref _detunedNominalPhase, DetunedNominalRatio, effectiveFrequency);
                 double nominalDecay = Math.Exp(-_elapsedSeconds * _partialDecayRates[NominalIndex]);
-                sample += Math.Sin(detunedPhase * 2.0 * Math.PI) * _partialAmplitudes[NominalIndex] * nominalDecay;
+                double detunedLevel = _partialAmplitudes[NominalIndex] * nominalDecay;
+
+                sample += Math.Sin(detunedPhase * 2.0 * Math.PI) * detunedLevel;
+
+                if (detunedLevel > peakLevel) peakLevel = detunedLevel;
             }
 
+            _lastPeakPartialLevel = peakLevel;
             _elapsedSeconds += 1.0 / SampleRate;
 
             // Normalizace - partiálů je dohromady 8, ať zvon nepřebuzuje výstup
