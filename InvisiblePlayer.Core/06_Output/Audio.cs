@@ -33,8 +33,8 @@ namespace InvisiblePlayer.Core.Output
 
             _waveOut = new WaveOutEvent
             {
-                DesiredLatency = 50, // Nízká latence (50 ms) pro živé hraní bez zpoždění
-                NumberOfBuffers = 2
+                DesiredLatency = 100, // Nízká latence (50 ms) pro živé hraní bez zpoždění
+                NumberOfBuffers = 4
             };
 
             _waveOut.Init(this);

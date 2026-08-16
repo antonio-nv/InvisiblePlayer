@@ -65,6 +65,8 @@ namespace InvisiblePlayer.UI.Windows
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+
 
             // 1. INICIALIZACE NOVÉHO TONEENGINE (Rejstříky / Varhany)
             _toneEngine = new ToneEngine();
