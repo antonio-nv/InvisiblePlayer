@@ -4,112 +4,139 @@ using System;
 namespace InvisiblePlayer.Core.Generators
 {
     /// <summary>
-    /// Model klavíru (obecný, ne konkrétní model jako Petrof).
-    /// Dva hlavní jevy, které dělají klavír klavírem:
-    ///  1) INHARMONICITA - tuhost struny způsobuje, že vyšší harmonické nejsou
-    ///     přesné celočíselné násobky základní frekvence, ale jsou mírně "vytažené" nahoru.
-    ///  2) ÚDER KLADÍVKA - krátký šumový impuls na začátku tónu (filtrovaný přes
-    ///     pásmovou propust), který dává tónu ten charakteristický "cvak".
-    ///
-    /// Amplitudy harmonických a ADSR obálku lze volitelně přepsat z VoicePreset
-    /// (viz konstruktor s parametrem preset) - hodí se pro víc "barev" klavíru
-    /// (jasnější/temnější zvuk) beze změny téhle třídy.
+    /// Pokročilý fyzikální model akusitckého piana.
+    /// Řeší:
+    /// 1) Inharmonicitu ocelových strun (B-faktor stiffness).
+    /// 2) Rychlejší doznávání vyšších harmonických (per-harmonic exponential decay).
+    /// 3) Impuls úderu plstěného kladívka (hammer knock transient).
+    /// 4) Fázové zázněry více-strunného chóru (unison detune beating).
     /// </summary>
     public class PianoVoice : SynthVoice
     {
-        // Fáze pro 6 harmonických (základní tón + 5 vyšších)
-        private readonly double[] _phases = new double[6];
+        private const int HarmonicCount = 10;
 
-        // Amplitudy jednotlivých harmonických - VLASTNÍ KOPIE pro tuhle instanci
-        // (viz .Clone() níže), ne sdílená reference na DefaultAmplitudes. Kdyby
-        // ukazovaly na stejné pole, přepsání presetem by natrvalo poškodilo
-        // výchozí hodnoty i pro všechny další klavíry vytvořené bez presetu.
-        private readonly double[] _amplitudes;
+        // Fáze pro 2 struny v chóru (dávají akustickému pianu živý prostorový dozněv)
+        private readonly double[] _phasesStringA = new double[HarmonicCount];
+        private readonly double[] _phasesStringB = new double[HarmonicCount];
 
-        // Koeficient inharmonicity - u reálného klavíru cca 0.0001 (basy) až 0.001 (výšky).
-        // Fyzika struny zůstává vždy stejná bez ohledu na preset - to dělá klavír klavírem.
-        private const double InharmonicityCoefficient = 0.00035;
+        private double _elapsedSeconds = 0.0;
 
-        // Výchozí amplitudy - vyšší harmonické tišší (přibližně odpovídá úderu kladívka)
-        private static readonly double[] DefaultAmplitudes = { 1.0, 0.55, 0.30, 0.18, 0.10, 0.06 };
+        // Parametry z presetu
+        private readonly double[] _harmonicAmplitudes;
+        private readonly double[] _harmonicDecayRates;
+        private readonly double _inharmonicityB;
+        private readonly double _detuneAmountHz;
 
-        // Šum kladívka (podobný principu jako "chiff" u varhan)
+        // Hammer knock (úder kladívka)
         private double _hammerEnvelope = 1.0;
         private readonly NoiseGenerator _hammerNoise = new NoiseGenerator();
         private readonly BandPassFilter _hammerFilter = new BandPassFilter();
-        private const double HammerDurationSec = 0.008; // 8 ms - velmi krátký "cvak"
+        private readonly double _hammerDurationSec;
+
+        // Konec tónu podle prahu -90 dB
+        private const double SilenceThresholdDb = -90.0;
+        private static readonly double SilenceThresholdLinear = Math.Pow(10.0, SilenceThresholdDb / 20.0);
+        private double _lastPeakPartialLevel = 1.0;
 
         public PianoVoice(double sampleRate) : base(sampleRate)
         {
-            // Klasická klavírní obálka: rychlý úder, plynulý pokles, nízký sustain
-            NoteEnvelope.AttackTime = 0.003f;
-            NoteEnvelope.DecayTime = 1.4f;
-            NoteEnvelope.SustainLevel = 0.10f;
-            NoteEnvelope.ReleaseTime = 0.35f;
+            // Výchozí hodnoty pro akustické křídlo
+            _harmonicAmplitudes = new double[] { 1.0, 0.70, 0.45, 0.30, 0.20, 0.12, 0.08, 0.05, 0.03, 0.01 };
+            _harmonicDecayRates = new double[] { 0.8, 1.40, 2.20, 3.10, 4.20, 5.50, 7.00, 8.80, 11.0, 14.0 };
+            _inharmonicityB = 0.00015;
+            _detuneAmountHz = 0.35;
+            _hammerDurationSec = 0.008;
 
-            _amplitudes = (double[])DefaultAmplitudes.Clone();
-
-            _hammerFilter.SetParams(2500.0, 1.5, sampleRate);
+            ConfigureEnvelope();
+            _hammerFilter.SetParams(600.0, 1.5, sampleRate);
         }
 
-        // Nový konstruktor - s presetem. Umožňuje přepsat amplitudy harmonických
-        // (preset.Harmonics) a ADSR obálku (preset.Envelope), např. pro klavír
-        // s jinou barvou zvuku než výchozí.
         public PianoVoice(VoicePreset preset, double sampleRate) : this(sampleRate)
         {
-            if (preset?.Envelope != null)
+            if (preset != null)
             {
-                NoteEnvelope.AttackTime = preset.Envelope.AttackTime;
-                NoteEnvelope.DecayTime = preset.Envelope.DecayTime;
-                NoteEnvelope.SustainLevel = preset.Envelope.SustainLevel;
-                NoteEnvelope.ReleaseTime = preset.Envelope.ReleaseTime;
-            }
-
-            if (preset?.Harmonics != null && preset.Harmonics.Length == _amplitudes.Length)
-            {
-                for (int i = 0; i < _amplitudes.Length; i++)
+                if (preset.PartialAmplitudes != null && preset.PartialAmplitudes.Length >= HarmonicCount)
                 {
-                    _amplitudes[i] = preset.Harmonics[i].Amplitude;
+                    Array.Copy(preset.PartialAmplitudes, _harmonicAmplitudes, HarmonicCount);
                 }
+
+                if (preset.PartialDecayRates != null && preset.PartialDecayRates.Length >= HarmonicCount)
+                {
+                    Array.Copy(preset.PartialDecayRates, _harmonicDecayRates, HarmonicCount);
+                }
+
+                // Inharmonicitu a rozladění bereme z vlastností presetu
+                _inharmonicityB = preset.ChiffFilterQ > 0 ? preset.ChiffFilterQ * 0.0001 : 0.00015;
+                _detuneAmountHz = preset.ModDepth;
+
+                double filterFreq = preset.ChiffFilterFreqHz > 0 ? preset.ChiffFilterFreqHz : 600.0;
+                _hammerFilter.SetParams(filterFreq, 1.5, sampleRate);
             }
-            // Poznámka: preset.Harmonics[i].FrequencyMultiplier se u klavíru záměrně
-            // nepoužívá - fyzikální "roztažení" harmonických (inharmonicita) počítá
-            // tahle třída vždy sama (viz InharmonicityCoefficient výše). Preset tedy
-            // řídí jen HLASITOST jednotlivých harmonických, ne jejich přesný poměr.
+        }
+
+        private void ConfigureEnvelope()
+        {
+            NoteEnvelope.AttackTime = 0.001f; // Okamžitý úder
+            NoteEnvelope.DecayTime = 0.01f;
+            NoteEnvelope.SustainLevel = 1.0f; // Neklesá pevným časem, řídí ho decay jednotlivých alikvót
+            NoteEnvelope.ReleaseTime = 0.20f; // Tlumítko (damper) po pustění klávesy
         }
 
         public override void NoteOn()
         {
             base.NoteOn();
-            _hammerEnvelope = 1.0; // Reset šumu kladívka pro nový úder
+            _elapsedSeconds = 0.0;
+            _hammerEnvelope = 1.0;
+            _lastPeakPartialLevel = 1.0;
         }
+
+        public override bool IsFinished =>
+            base.IsFinished || (HasStarted && _lastPeakPartialLevel < SilenceThresholdLinear);
 
         protected override double CalculateWaveform(double frequency)
         {
             double sample = 0.0;
+            double peakLevel = 0.0;
 
-            for (int i = 0; i < _phases.Length; i++)
+            // Výpočet 2 rozladěných strun v chóru pro přirozený dozněv
+            double freqA = frequency;
+            double freqB = frequency + _detuneAmountHz;
+
+            for (int i = 0; i < HarmonicCount; i++)
             {
-                int harmonicNumber = i + 1;
+                int harmonicIndex = i + 1;
 
-                // Inharmonicita: f_n = n * f0 * sqrt(1 + B * n^2)
-                double stretch = Math.Sqrt(1.0 + InharmonicityCoefficient * harmonicNumber * harmonicNumber);
-                double ratio = harmonicNumber * stretch;
+                // Fyzikální vzorec inharmonicity tuhé ocelové struny
+                double stretch = Math.Sqrt(1.0 + _inharmonicityB * harmonicIndex * harmonicIndex);
+                double ratio = harmonicIndex * stretch;
 
-                double phase = AdvancePhase(ref _phases[i], ratio, frequency);
-                sample += Math.Sin(phase * 2.0 * Math.PI) * _amplitudes[i];
+                double phaseA = AdvancePhase(ref _phasesStringA[i], ratio, freqA);
+                double phaseB = AdvancePhase(ref _phasesStringB[i], ratio, freqB);
+
+                // Exponenciální pokles amplitudy dané harmonické
+                double decay = Math.Exp(-_elapsedSeconds * _harmonicDecayRates[i]);
+                double level = _harmonicAmplitudes[i] * decay;
+
+                double waveA = Math.Sin(phaseA * 2.0 * Math.PI);
+                double waveB = Math.Sin(phaseB * 2.0 * Math.PI);
+
+                sample += (waveA + waveB) * 0.5 * level;
+
+                if (level > peakLevel) peakLevel = level;
             }
 
-            // Normalizace (součet amplitud harmonických)
-            sample *= 0.5;
+            _lastPeakPartialLevel = peakLevel;
+            sample *= 0.30; // Normalizace
 
-            // Šum kladívka - krátký "cvak" na začátku, filtrovaný do vyšších frekvencí
+            // Transient úderu plstěného kladívka (dřevěný/plstěný drc)
             if (_hammerEnvelope > 0.001)
             {
                 double noise = _hammerNoise.NextSample((int)SampleRate);
-                sample += _hammerFilter.Process(noise) * _hammerEnvelope * 0.15;
-                _hammerEnvelope *= Math.Exp(-1.0 / (SampleRate * HammerDurationSec));
+                sample += _hammerFilter.Process(noise) * _hammerEnvelope * 0.35;
+                _hammerEnvelope *= Math.Exp(-1.0 / (SampleRate * _hammerDurationSec));
             }
+
+            _elapsedSeconds += 1.0 / SampleRate;
 
             return sample;
         }

@@ -56,6 +56,8 @@ namespace InvisiblePlayer.Core.ToneEngine
                 _002_ViolnBas16.Preset,
                 _085_Aeolus.Preset,
                 _200_Piano_Petrof.Preset,
+                _201_Piano_Eletricke.Preset,
+                _202_Piano_LimonadovyJoe.Preset,
                 _300_Cembalo_RandallHopkirk.Preset,
                 _400_Zvon_Zikmund.Preset,
             };

@@ -10,6 +10,7 @@ namespace InvisiblePlayer.Core.Tones
         // ToneEngine, který zvukový engine se má pro tento rejstřík použít.
         public static VoicePreset Preset => new VoicePreset
         {
+            Number = 300,
             Name = "Cembalo (Randall & Hopkirk)",
             Instrument = InstrumentType.Cembalo
         };
