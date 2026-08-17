@@ -443,7 +443,7 @@ namespace InvisiblePlayer.UI.Windows
             Console.WriteLine("=========================================================================================");
             Console.ResetColor();
 
-            Console.WriteLine($" {fileName,-35} | {folderPath,-45}");
+            Console.WriteLine($"  {folderPath}\\{fileName} ");
             Console.WriteLine("-----------------------------------------------------------------------------------------");
         }
 
@@ -452,7 +452,7 @@ namespace InvisiblePlayer.UI.Windows
             Console.SetCursorPosition(0, 7);
 
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine("Legend: -120dB                                             -60dB                       0dB");
+            Console.WriteLine("-120dB             -90db                 -60db                -30dB                 0dB");
             Console.ResetColor();
 
             string barL = AudioMeter.RenderBar(_leftDb, 80);

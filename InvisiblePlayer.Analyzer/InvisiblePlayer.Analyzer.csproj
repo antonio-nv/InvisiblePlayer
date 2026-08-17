@@ -2,9 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-  <ServerGarbageCollection>false</ServerGarbageCollection>
-  <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-	  <TargetFramework>net8.0-windows</TargetFramework>
+  	  <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

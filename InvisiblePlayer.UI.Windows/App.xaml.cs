@@ -2,8 +2,9 @@
 using InvisiblePlayer.Core.Generators;
 using InvisiblePlayer.Core.Input;      // Pro InputManager
 using InvisiblePlayer.Core.Output;
-using InvisiblePlayer.Core.ToneEngine; // NAČTEME NÁŠ NOVÝ TONEENGINE
+using InvisiblePlayer.Core.ToneEngine; // TONEENGINE
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -64,9 +65,10 @@ namespace InvisiblePlayer.UI.Windows
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            base.OnStartup(e);
-            System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+            // --- KROK 0: UKONČENÍ PŘEDCHOZÍCH INSTANCÍ PROHLÍŽEČE ---
+            KillPreviousInstances();
 
+            base.OnStartup(e);
 
             // 1. INICIALIZACE NOVÉHO TONEENGINE (Rejstříky / Varhany)
             _toneEngine = new ToneEngine();
@@ -92,19 +94,11 @@ namespace InvisiblePlayer.UI.Windows
                     _toneEngine?.NoteOff(evt.Note.Number);
                 }
 
-                System.Diagnostics.Debug.WriteLine($"[{evt.Source}] {evt.Type} | Nota: {evt.Note.Number} ({evt.Note.FrequencyHz:F1} Hz)");
-
-                if (evt.Type == InputEventType.NoteOn && evt.Velocity > 0)
-                    _toneEngine?.NoteOn(evt.Note.Number);
-                else
-                    _toneEngine?.NoteOff(evt.Note.Number);
+                Debug.WriteLine($"[{evt.Source}] {evt.Type} | Nota: {evt.Note.Number} ({evt.Note.FrequencyHz:F1} Hz)");
             };
 
             // Spustíme odchytávání z piana na pozadí
             _inputManager.StartLiveDevice("USB MIDI"); // nebo název tvého Casia
-
-
-
 
             // 3. KONTROLA ARGUMENTŮ (Spuštění bez souboru = zůstane běžet jako hrací stůl pro piano)
             if (e.Args.Length == 0)
@@ -132,6 +126,31 @@ namespace InvisiblePlayer.UI.Windows
 
             // 5. SPUŠTĚNÍ PŘES MEDIA LAUNCHER
             MediaLauncher.Launch(filePath, _inputManager);
+        }
+
+        /// <summary>
+        /// Vyhledá a nekompromisně ukončí jakoukoliv předchozí spuštěnou instanci prohlížeče.
+        /// </summary>
+        private void KillPreviousInstances()
+        {
+            try
+            {
+                Process currentProcess = Process.GetCurrentProcess();
+
+                var previousProcesses = Process.GetProcessesByName(currentProcess.ProcessName)
+                                               .Where(p => p.Id != currentProcess.Id);
+
+                foreach (var process in previousProcesses)
+                {
+                    try
+                    {
+                        process.Kill();
+                        process.WaitForExit(1000); // Počkáme max 1 sekundu na uvolnění zvukového zařízení
+                    }
+                    catch { /* ignorujeme případné chybové stavy */ }
+                }
+            }
+            catch { /* ignorujeme případné chyby přístupu k procesům */ }
         }
 
         protected override void OnExit(ExitEventArgs e)
