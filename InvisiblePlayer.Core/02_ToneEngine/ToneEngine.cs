@@ -38,7 +38,7 @@ namespace InvisiblePlayer.Core.ToneEngine
         // nepoužíváme - pro spektrální analýzu potřebujeme signál beze zkreslení.
         private const double MasterGain = 0.3;
 
-        // Exponent kompenzace podle počtu znějících hlasů (viz GenerateNextMixSample).
+        // Exponent kompenzace podle počtu znějících hlasů (viz GenerateNextBandSample).
         private const double PolyphonyCompensationExponent = 0.5;
 
         public bool ClipDetected { get; private set; }
@@ -238,9 +238,9 @@ namespace InvisiblePlayer.Core.ToneEngine
         // 2. GENEROVÁNÍ ZVUKU PRO ZVUKOVKU (Volá audio karta v reálném čase)
         // =========================================================================
 
-        public double GenerateNextMixSample()
+        public BandSample GenerateNextBandSample()
         {
-            double mixedSample = 0.0;
+            BandSample mixedSample = default;
             int voiceCount;
 
             lock (_lock)
@@ -253,7 +253,7 @@ namespace InvisiblePlayer.Core.ToneEngine
 
                     if (activeNote?.Voice != null)
                     {
-                        double sample = activeNote.Voice.GenerateSample(activeNote.Frequency);
+                        BandSample sample = activeNote.Voice.GenerateSample(activeNote.Frequency);
                         mixedSample += sample;
 
                         if (activeNote.Voice.IsFinished)
@@ -266,15 +266,27 @@ namespace InvisiblePlayer.Core.ToneEngine
 
             // Preventivní kompenzace podle počtu znějících hlasů (viz dřívější
             // vysvětlení - N nezávislých zdrojů se sčítá jako √N, ne lineárně).
+            // Stejný jeden koeficient se aplikuje na všechna tři pásma najednou.
             double compensation = voiceCount > 1
                 ? 1.0 / Math.Pow(voiceCount, PolyphonyCompensationExponent)
                 : 1.0;
 
-            double gained = mixedSample * MasterGain * compensation;
+            BandSample gained = mixedSample * (MasterGain * compensation);
 
-            ClipDetected = gained > 1.0 || gained < -1.0;
+            // Ořez se sleduje zvlášť pro každé pásmo - až každé pásmo poputuje
+            // na svůj vlastní D/A převodník/zesilovač, může přebudit i jen jedno
+            // z nich, zatímco ostatní budou v pořádku.
+            ClipDetected =
+                Math.Abs(gained.Bass) > 1.0 ||
+                Math.Abs(gained.Mid) > 1.0 ||
+                Math.Abs(gained.Treble) > 1.0;
 
-            return Math.Clamp(gained, -1.0, 1.0);
+            return new BandSample
+            {
+                Bass = Math.Clamp(gained.Bass, -1.0, 1.0),
+                Mid = Math.Clamp(gained.Mid, -1.0, 1.0),
+                Treble = Math.Clamp(gained.Treble, -1.0, 1.0)
+            };
         }
     }
 }

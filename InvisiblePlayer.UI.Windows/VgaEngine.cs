@@ -14,6 +14,12 @@ namespace InvisiblePlayer.UI.Windows
 
         private static double _leftDb = -120.0;
         private static double _rightDb = -120.0;
+
+        // Tři pásma (hloubky/středy/výšky) jen ze syntezátoru InvisiblePlayer.Core -
+        // NEjsou smíchané s výstupem přehrávače souborů, na rozdíl od _leftDb/_rightDb výše.
+        private static double _bassDb = -120.0;
+        private static double _midDb = -120.0;
+        private static double _trebleDb = -120.0;
         private static int _volume = 80;
         private static bool _isPaused = false;
 
@@ -201,6 +207,23 @@ namespace InvisiblePlayer.UI.Windows
 
                     _leftDb = AudioMeter.LinearToDecibels(combinedL);
                     _rightDb = AudioMeter.LinearToDecibels(combinedR);
+
+                    // Tři pásma (hloubky/středy/výšky) čistě ze syntezátoru - úmyslně
+                    // NEmíchat s peakL/peakR výše, ať metry ukazují jen to, co dělá
+                    // ToneEngine/AudioEngine sám o sobě.
+                    float bassPeak = 0f, midPeak = 0f, treblePeak = 0f;
+                    if (App.OrganEngine != null)
+                    {
+                        var bandPeaks = App.OrganEngine.ReadBandPeaks();
+                        bassPeak = bandPeaks.Bass;
+                        midPeak = bandPeaks.Mid;
+                        treblePeak = bandPeaks.Treble;
+                    }
+
+                    _bassDb = AudioMeter.LinearToDecibels(bassPeak);
+                    _midDb = AudioMeter.LinearToDecibels(midPeak);
+                    _trebleDb = AudioMeter.LinearToDecibels(treblePeak);
+
                     RenderMetersOnly();
                 }
                 else
@@ -469,6 +492,32 @@ namespace InvisiblePlayer.UI.Windows
             Console.Write(barR);
             Console.ResetColor();
             Console.WriteLine($"] {_rightDb,6:F1} dB");
+
+            // --- Tři pásma syntezátoru (hloubky/středy/výšky) ---
+            // Stejná legenda i formát pruhu jako u L/R výše (viz řádek "-120dB...0dB").
+            // Jiná barva (azurová) jen kvůli přehlednosti, ať se dá od L/R na první
+            // pohled odlišit - jinak identický vzhled/rozsah/škálování.
+            string barBass = AudioMeter.RenderBar(_bassDb, 80);
+            string barMid = AudioMeter.RenderBar(_midDb, 80);
+            string barTreble = AudioMeter.RenderBar(_trebleDb, 80);
+
+            Console.Write(" B: [");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(barBass);
+            Console.ResetColor();
+            Console.WriteLine($"] {_bassDb,6:F1} dB");
+
+            Console.Write(" S: [");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(barMid);
+            Console.ResetColor();
+            Console.WriteLine($"] {_midDb,6:F1} dB");
+
+            Console.Write(" V: [");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(barTreble);
+            Console.ResetColor();
+            Console.WriteLine($"] {_trebleDb,6:F1} dB");
 
             // --- Zadávání čísla rejstříku + přehled aktivních rejstříků ---
             Console.Write(" Rejstřík č.: [");

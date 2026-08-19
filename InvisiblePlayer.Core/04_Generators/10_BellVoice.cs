@@ -152,7 +152,7 @@ namespace InvisiblePlayer.Core.Generators
         public override bool IsFinished =>
             base.IsFinished || (HasStarted && _lastPeakPartialLevel < SilenceThresholdLinear);
 
-        protected override double CalculateWaveform(double frequency)
+        protected override BandSample CalculateWaveform(double frequency)
         {
             double effectiveFrequency = frequency;
 
@@ -163,7 +163,7 @@ namespace InvisiblePlayer.Core.Generators
                 effectiveFrequency = frequency * (1.0 + modulator * _modDepth);
             }
 
-            double sample = 0.0;
+            BandSample bands = default;
             double peakLevel = 0.0;
 
             for (int i = 0; i < _partialRatios.Length; i++)
@@ -172,7 +172,9 @@ namespace InvisiblePlayer.Core.Generators
                 double decay = Math.Exp(-_elapsedSeconds * _partialDecayRates[i]);
                 double level = _partialAmplitudes[i] * decay;
 
-                sample += Math.Sin(phase * 2.0 * Math.PI) * level;
+                double value = Math.Sin(phase * 2.0 * Math.PI) * level;
+                double partialFreq = effectiveFrequency * _partialRatios[i];
+                AddToBand(ref bands, partialFreq, value);
 
                 if (level > peakLevel) peakLevel = level;
             }
@@ -183,7 +185,9 @@ namespace InvisiblePlayer.Core.Generators
                 double nominalDecay = Math.Exp(-_elapsedSeconds * _partialDecayRates[NominalIndex]);
                 double detunedLevel = _partialAmplitudes[NominalIndex] * nominalDecay;
 
-                sample += Math.Sin(detunedPhase * 2.0 * Math.PI) * detunedLevel;
+                double detunedValue = Math.Sin(detunedPhase * 2.0 * Math.PI) * detunedLevel;
+                double detunedFreq = effectiveFrequency * DetunedNominalRatio;
+                AddToBand(ref bands, detunedFreq, detunedValue);
 
                 if (detunedLevel > peakLevel) peakLevel = detunedLevel;
             }
@@ -192,7 +196,7 @@ namespace InvisiblePlayer.Core.Generators
             _elapsedSeconds += 1.0 / SampleRate;
 
             // Normalizace - partiálů je dohromady 8, ať zvon nepřebuzuje výstup
-            return sample * 0.3;
+            return bands * 0.3;
         }
     }
 }

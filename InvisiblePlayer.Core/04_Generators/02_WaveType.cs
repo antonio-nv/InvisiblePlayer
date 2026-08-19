@@ -52,6 +52,18 @@
         // každý hlas použije své vestavěné výchozí hodnoty (jako dosud).
         public AdsrEnvelope Envelope { get; set; } = null;
 
+        // --- Parametry pro Instrument == Piano/Cembalo (fyzikální model struny,
+        // Karplus-Strong - viz KarplusStrongString.cs). Organ/Bell tato pole
+        // nepoužívají. ---
+
+        // Za kolik sekund doznívá ZÁKLADNÍ tón o -60 dB. Vyšší harmonické
+        // doznívají samy rychleji, netřeba nastavovat zvlášť.
+        public double StringDecaySeconds { get; set; } = 8.0;
+
+        // 0.0-0.98: síla dolní propusti ve zpožďovací smyčce struny.
+        // Nižší = jasnější/ostřejší zvuk (cembalo), vyšší = tmavší/plnější (klavír).
+        public double StringBrightness { get; set; } = 0.5;
+
         // --- Partiály pro Instrument == Bell (volitelné) ---
         // Pokud necháš null, BellVoice použije svůj vestavěný výchozí model.
         // Všechny tři pole musí mít stejnou délku (počet partiálů).

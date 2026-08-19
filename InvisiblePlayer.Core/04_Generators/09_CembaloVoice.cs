@@ -4,129 +4,135 @@ using System;
 namespace InvisiblePlayer.Core.Generators
 {
     /// <summary>
-    /// Model cembala (pracovní název "Randall & Hopkirk" - žádný konkrétní historický
-    /// nástroj, jen interní jméno presetu).
-    /// Dva hlavní jevy, které dělají cembalo cembalem (na rozdíl od klavíru):
-    ///  1) BRNKNUTÍ BRČKEM (plectrum) - ostrý, velmi krátký šumový "click" na začátku,
-    ///     mnohem kratší a "sušší" než úder klavírního kladívka.
-    ///  2) NEZÁVISLÉ DOZNÍVÁNÍ HARMONICKÝCH - u brnkané struny odeznívají vyšší
-    ///     harmonické mnohem rychleji než základní tón.
+    /// Fyzikální model cembala (pracovní název "Randall &amp; Hopkirk" - žádný
+    /// konkrétní historický nástroj, jen interní jméno presetu).
     ///
-    /// DŮLEŽITÁ ZMĚNA: dokud klávesu držíš, sdílená ADSR obálka po náběhu zůstává
-    /// na hladině 1.0 a neklesá - o doznívání se stará VÝHRADNĚ fyzikální model
-    /// (amplitudy + rychlosti dozvuku). Teprve puštění klávesy spustí Release,
-    /// coby přiblížení reálné dušičce (damperu), která strunu rychle utlumí.
-    /// Kromě toho konec tónu hlídá i pokles pod práh -90 dB (kdybys klávesu držel
-    /// dlouho poté, co je zvuk fyzicky už neslyšitelný).
+    /// Tělo tónu se stejně jako u PianoVoice simuluje metodou Karplus-Strong
+    /// (viz KarplusStrongString.cs), tady ale jako JEDNA struna (bez unisonu -
+    /// skutečné cembalo obvykle nemá dvě struny rozladěné do "živého" zázněru
+    /// jako klavír) a s nižší hodnotou brightness => zpožďovací smyčka tlumí
+    /// vyšší harmonické méně, takže zvuk zůstává jasnější a "kovovější", jak
+    /// se na brnkanou strunu sluší.
+    ///
+    /// Dva hlavní jevy, které dělají cembalo cembalem (na rozdíl od klavíru):
+    ///  1) BRNKNUTÍ BRČKEM (plectrum) - ostrý, velmi krátký šumový "click" na
+    ///     začátku, kratší a "sušší" než úder klavírního kladívka (beze změny
+    ///     oproti dřívějšku).
+    ///  2) RYCHLEJŠÍ CELKOVÝ DOZVUK - struna cembala doznívá řádově rychleji
+    ///     než klavírní (viz StringDecaySeconds v presetu).
+    ///
+    /// Dokud klávesu držíš, dozvuk řídí výhradně fyzikální model struny (KS
+    /// smyčka) - ADSR obálka po náběhu zůstává na hladině 1.0 a neklesá.
+    /// Teprve puštění klávesy spustí Release, jako přiblížení reálné dušičce
+    /// (damperu), která strunu rychle utlumí.
     /// </summary>
     public class CembaloVoice : SynthVoice
     {
-        private readonly double[] _phases = new double[6];
+        private readonly KarplusStrongString _string;
+        private readonly NoiseGenerator _exciteNoise = new NoiseGenerator();
+        private bool _stringExcited = false;
 
-        private readonly double[] _amplitudes;
-        private readonly double[] _decayRatesPerSec;
-
-        private double _elapsedSeconds = 0.0;
-
-        private static readonly double[] DefaultAmplitudes = { 1.0, 0.7, 0.55, 0.4, 0.3, 0.2 };
-        private static readonly double[] DefaultDecayRatesPerSec = { 1.0, 2.2, 3.5, 5.0, 7.0, 9.5 };
+        private readonly double _stringBrightness;
+        private readonly double _stringDecaySeconds;
 
         // --- Konec tónu podle prahu, ne (jen) podle pevného času ---
         private const double SilenceThresholdDb = -90.0;
         private static readonly double SilenceThresholdLinear = Math.Pow(10.0, SilenceThresholdDb / 20.0);
-        private double _lastPeakPartialLevel = 1.0;
+        private double _lastLevel = 1.0;
 
-        // Pluck (brnknutí) - krátký ostrý šumový impuls
+        // Pluck (brnknutí) - krátký ostrý šumový impuls (beze změny oproti dřívějšku)
         private double _pluckEnvelope = 1.0;
         private readonly NoiseGenerator _pluckNoise = new NoiseGenerator();
         private readonly BandPassFilter _pluckFilter = new BandPassFilter();
         private const double PluckDurationSec = 0.004;
 
+        // Tělo struny i pluck jsou širokopásmový signál - musí se doopravdy
+        // rozdělit skutečnou výhybkou mezi hloubky/středy/výšky.
+        private readonly ThreeBandCrossover _toneCrossover;
+        private readonly ThreeBandCrossover _pluckCrossover;
+
         public CembaloVoice(double sampleRate) : base(sampleRate)
         {
-            _amplitudes = (double[])DefaultAmplitudes.Clone();
-            _decayRatesPerSec = (double[])DefaultDecayRatesPerSec.Clone();
+            _string = new KarplusStrongString(sampleRate);
+
+            _stringBrightness = 0.30; // Nižší než klavír = jasnější, "kovovější" tón
+            _stringDecaySeconds = 3.5; // Cembalo doznívá výrazně rychleji než klavír
 
             ConfigureEnvelope();
 
             _pluckFilter.SetParams(3800.0, 2.0, sampleRate);
+            _toneCrossover = new ThreeBandCrossover(sampleRate);
+            _pluckCrossover = new ThreeBandCrossover(sampleRate);
         }
 
         public CembaloVoice(VoicePreset preset, double sampleRate) : this(sampleRate)
         {
-            if (preset?.Harmonics != null && preset.Harmonics.Length == _amplitudes.Length)
+            if (preset != null)
             {
-                for (int i = 0; i < _amplitudes.Length; i++)
-                {
-                    _amplitudes[i] = preset.Harmonics[i].Amplitude;
-                }
-            }
+                _stringBrightness = Math.Clamp(preset.StringBrightness, 0.0, 0.98);
+                _stringDecaySeconds = Math.Max(0.2, preset.StringDecaySeconds);
 
-            if (preset?.PartialDecayRates != null && preset.PartialDecayRates.Length == _decayRatesPerSec.Length)
-            {
-                for (int i = 0; i < _decayRatesPerSec.Length; i++)
-                {
-                    _decayRatesPerSec[i] = preset.PartialDecayRates[i];
-                }
+                double pluckFreq = preset.ChiffFilterFreqHz > 0 ? preset.ChiffFilterFreqHz : 3800.0;
+                double pluckQ = preset.ChiffFilterQ > 0 ? preset.ChiffFilterQ : 2.0;
+                _pluckFilter.SetParams(pluckFreq, pluckQ, sampleRate);
             }
-
-            // preset?.Envelope se tu záměrně nepoužívá - obálka je teď pevně daná
-            // ConfigureEnvelope() (náběh + hold na 1.0), aby doznívání řídil čistě
-            // fyzikální model. Kdybys chtěl jiný Release (rychlost dušičky), uprav
-            // hodnotu přímo v ConfigureEnvelope(), ne přes preset.
         }
 
         private void ConfigureEnvelope()
         {
             NoteEnvelope.AttackTime = 0.001f;  // Prakticky okamžitý náběh
             NoteEnvelope.DecayTime = 0.01f;    // Rychle "usedne" na sustain
-            NoteEnvelope.SustainLevel = 1.0f;  // ...a dál drží 1.0 - neklesá sama
+            NoteEnvelope.SustainLevel = 1.0f;  // ...a dál drží 1.0 - dozvuk řeší struna sama
             NoteEnvelope.ReleaseTime = 0.12f;  // Puštění klávesy = dušička (damper)
         }
 
         public override void NoteOn()
         {
             base.NoteOn();
-            _elapsedSeconds = 0.0;
             _pluckEnvelope = 1.0;
-            _lastPeakPartialLevel = 1.0;
+            _lastLevel = 1.0;
+            _stringExcited = false; // "Znovu brnknout" - i kdyby předchozí tón ještě dozníval
         }
 
         public override bool IsFinished =>
-            base.IsFinished || (HasStarted && _lastPeakPartialLevel < SilenceThresholdLinear);
+            base.IsFinished || (HasStarted && _lastLevel < SilenceThresholdLinear);
 
-        protected override double CalculateWaveform(double frequency)
+        protected override BandSample CalculateWaveform(double frequency)
         {
-            double sample = 0.0;
-            double peakLevel = 0.0;
-
-            for (int i = 0; i < _phases.Length; i++)
+            // Strunu rozezníme až tady, při prvním vzorku po NoteOn() - teprve
+            // tady známe skutečný kmitočet (viz komentář v ToneEngine.NoteOn).
+            if (!_stringExcited)
             {
-                int harmonicNumber = i + 1;
-                double phase = AdvancePhase(ref _phases[i], harmonicNumber, frequency);
-
-                double individualDecay = Math.Exp(-_elapsedSeconds * _decayRatesPerSec[i]);
-                double level = _amplitudes[i] * individualDecay;
-
-                sample += Math.Sin(phase * 2.0 * Math.PI) * level;
-
-                if (level > peakLevel) peakLevel = level;
+                _string.Excite(frequency, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate);
+                _stringExcited = true;
             }
 
-            _lastPeakPartialLevel = peakLevel;
-            sample *= 0.35;
+            BandSample bands = default;
 
-            // Pluck - ostrý krátký "click" na začátku
+            double stringSample = _string.NextSample();
+
+            var toneSplit = _toneCrossover.Process((float)stringSample);
+            bands.Bass += toneSplit.Bass;
+            bands.Mid += toneSplit.Mid;
+            bands.Treble += toneSplit.Treble;
+
+            _lastLevel = _lastLevel * 0.999 + Math.Abs(stringSample) * 0.001;
+
+            // Pluck - ostrý krátký "click" na začátku (beze změny oproti dřívějšku).
             if (_pluckEnvelope > 0.001)
             {
                 double noise = _pluckNoise.NextSample((int)SampleRate);
-                sample += _pluckFilter.Process(noise) * _pluckEnvelope * 0.25;
+                double shapedPluck = _pluckFilter.Process(noise) * _pluckEnvelope * 0.25;
+
+                var split = _pluckCrossover.Process((float)shapedPluck);
+                bands.Bass += split.Bass;
+                bands.Mid += split.Mid;
+                bands.Treble += split.Treble;
+
                 _pluckEnvelope *= Math.Exp(-1.0 / (SampleRate * PluckDurationSec));
             }
 
-            _elapsedSeconds += 1.0 / SampleRate;
-
-            return sample;
+            return bands;
         }
     }
 }

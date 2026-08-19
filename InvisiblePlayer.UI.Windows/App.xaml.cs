@@ -73,7 +73,6 @@ namespace InvisiblePlayer.UI.Windows
             // 1. INICIALIZACE NOVÉHO TONEENGINE (Rejstříky / Varhany)
             _toneEngine = new ToneEngine();
 
-            // Pokud AudioEngine přijímá generátor zvuku:
             _audioEngine = new AudioEngine(_toneEngine);
             _audioEngine.Start();
 
@@ -84,7 +83,6 @@ namespace InvisiblePlayer.UI.Windows
 
             _inputManager.OnInputEvent += evt =>
             {
-                // ZVUK! Předáme stisknutou / uvolněnou notu přímo do ToneEngine
                 if (evt.Type == InputEventType.NoteOn && evt.Velocity > 0)
                 {
                     _toneEngine?.NoteOn(evt.Note.Number);
@@ -97,40 +95,43 @@ namespace InvisiblePlayer.UI.Windows
                 Debug.WriteLine($"[{evt.Source}] {evt.Type} | Nota: {evt.Note.Number} ({evt.Note.FrequencyHz:F1} Hz)");
             };
 
-            // Spustíme odchytávání z piana na pozadí
-            _inputManager.StartLiveDevice("USB MIDI"); // nebo název tvého Casia
+            _inputManager.StartLiveDevice("USB MIDI");
 
-            // 3. KONTROLA ARGUMENTŮ (Spuštění bez souboru = zůstane běžet jako hrací stůl pro piano)
+            // 3. NAČTENÍ NASTAVENÍ A KONTROLA ARGUMENTŮ
+            AppSettings settings = AppSettings.Load();
+            string? filePathToPlay = null;
+
             if (e.Args.Length == 0)
             {
-                // Aplikace běží na pozadí a hraje přímo z kláves!
-                return;
+                // Spuštěno bez parametrů (F5 / Debug / Start) -> načteme naposledy přehrávaný
+                filePathToPlay = settings.LastFilePath;
+            }
+            else
+            {
+                // Spuštěno s parametrem -> načteme cestu ze souboru
+                string rawPath = string.Join(" ", e.Args).Trim('"');
+                try { filePathToPlay = Path.GetFullPath(rawPath); }
+                catch { filePathToPlay = rawPath; }
             }
 
-            // Složíme případně rozsekanou cestu (s mezerami)
-            string filePath = string.Join(" ", e.Args).Trim('"');
-
-            try
+            // 4. SPUŠTĚNÍ PŘEHRÁVÁNÍ NEBO VGA KONZOLE
+            if (!string.IsNullOrEmpty(filePathToPlay) && File.Exists(filePathToPlay))
             {
-                filePath = Path.GetFullPath(filePath);
+                settings.LastFilePath = filePathToPlay;
+                settings.LastFolderPath = Path.GetDirectoryName(filePathToPlay);
+                settings.Save();
+
+                MediaLauncher.Launch(filePathToPlay, _inputManager);
             }
-            catch { /* ponecháme původní */ }
-
-            // 4. KONTROLA EXISTENCE SOUBORU
-            if (!File.Exists(filePath))
+            else
             {
-                MessageBox.Show($"CHYBA: Soubor neexistuje!\nNačtená cesta:\n{filePath}", "InvisiblePlayer Error");
+                // Pokud soubor neexistuje, otevře se konzole naprázdno pro hraní na piano
+                VgaEngine.Run("");
                 Shutdown();
-                return;
             }
-
-            // 5. SPUŠTĚNÍ PŘES MEDIA LAUNCHER
-            MediaLauncher.Launch(filePath, _inputManager);
         }
 
-        /// <summary>
-        /// Vyhledá a nekompromisně ukončí jakoukoliv předchozí spuštěnou instanci prohlížeče.
-        /// </summary>
+
         private void KillPreviousInstances()
         {
             try
@@ -145,12 +146,12 @@ namespace InvisiblePlayer.UI.Windows
                     try
                     {
                         process.Kill();
-                        process.WaitForExit(1000); // Počkáme max 1 sekundu na uvolnění zvukového zařízení
+                        process.WaitForExit(1000);
                     }
-                    catch { /* ignorujeme případné chybové stavy */ }
+                    catch { /* ignorujeme chybové stavy pri zavírání */ }
                 }
             }
-            catch { /* ignorujeme případné chyby přístupu k procesům */ }
+            catch { /* ignorujeme chyby přístupu */ }
         }
 
         protected override void OnExit(ExitEventArgs e)

@@ -12,9 +12,13 @@ namespace InvisiblePlayer.Core.Output
         private WaveOutEvent? _waveOut;
         private readonly InvisiblePlayer.Core.ToneEngine.ToneEngine _synth;
 
-        // Nejvyšší absolutní hodnota vzorku od posledního čtení (ReadPeak) - obdoba
-        // MaxLeftPeak/MaxRightPeak v AudioPlayer.cs, jen pro mono výstup varhan.
+        // Špičkové úrovně od posledního čtení - zvlášť pro každé ze tří pásem
+        // (hloubky/středy/výšky), navíc jedna společná pro dnešní sloučený
+        // mono výstup. Stejný princip jako MaxLeftPeak/MaxRightPeak v AudioPlayer.cs.
         private float _peakSinceLastRead;
+        private float _peakBass;
+        private float _peakMid;
+        private float _peakTreble;
 
         public WaveFormat WaveFormat { get; }
 
@@ -56,6 +60,11 @@ namespace InvisiblePlayer.Core.Output
 
         /// <summary>
         /// Callback od NAudio – plníme zvukový buffer vzorky z našeho PolySynthu.
+        /// ToneEngine teď vrací rovnou tři hotová pásma (hloubky/středy/výšky) -
+        /// každý hlas si je vyrábí sám (viz SynthVoice.CalculateWaveform), takže
+        /// se tu už nic dodatečně nefiltruje. Dokud nemáme HW se třemi výstupy
+        /// (Raspberry Pi + HiFiBerry DAC8x), pásma se tu jen sečtou zpátky do
+        /// jednoho mono signálu pro současnou PC zvukovku.
         /// </summary>
         public int Read(byte[] buffer, int offset, int count)
         {
@@ -64,10 +73,15 @@ namespace InvisiblePlayer.Core.Output
 
             for (int i = 0; i < sampleCount; i++)
             {
-                float sample = (float)_synth.GenerateNextMixSample();
+                BandSample bands = _synth.GenerateNextBandSample();
 
-                float abs = Math.Abs(sample);
-                if (abs > _peakSinceLastRead) _peakSinceLastRead = abs;
+                TrackPeak(ref _peakBass, bands.Bass);
+                TrackPeak(ref _peakMid, bands.Mid);
+                TrackPeak(ref _peakTreble, bands.Treble);
+
+                float sample = (float)(bands.Bass + bands.Mid + bands.Treble);
+
+                TrackPeak(ref _peakSinceLastRead, sample);
 
                 waveBuffer.FloatBuffer[offset / 4 + i] = sample;
             }
@@ -75,9 +89,17 @@ namespace InvisiblePlayer.Core.Output
             return count;
         }
 
+        private static void TrackPeak(ref float peakStore, double sample)
+        {
+            float abs = (float)Math.Abs(sample);
+            if (abs > peakStore) peakStore = abs;
+        }
+
         /// <summary>
         /// Vrátí nejvyšší absolutní úroveň vzorku od posledního volání a vynuluje počítadlo.
         /// Určeno pro VU metr (stejný princip jako AudioPlayer.ReadPeakLevels() u MP3 přehrávače).
+        /// Toto je úroveň CELKOVÉHO sloučeného signálu - pro jednotlivá pásma
+        /// použij ReadBandPeaks().
         /// </summary>
         public float ReadPeak()
         {
@@ -87,8 +109,28 @@ namespace InvisiblePlayer.Core.Output
         }
 
         /// <summary>
-        /// True, pokud poslední vygenerovaný vzorek přesáhl rozsah -1.0..1.0
-        /// (tedy došlo k oříznutí). Průchozí hodnota ze ToneEngine.
+        /// Vrátí špičkové úrovně všech tří kmitočtových pásem (hloubky/středy/výšky)
+        /// od posledního volání a vynuluje je. Určeno pro tři samostatné VU metry -
+        /// volej ve stejném rytmu jako ReadPeak(), např. z UI časovače.
+        /// </summary>
+        public (float Bass, float Mid, float Treble) ReadBandPeaks()
+        {
+            var result = (_peakBass, _peakMid, _peakTreble);
+            _peakBass = 0f;
+            _peakMid = 0f;
+            _peakTreble = 0f;
+            return result;
+        }
+
+        /// <summary>Dělící kmitočet hloubky/středy v Hz (zatím pevný, viz SynthVoice).</summary>
+        public double LowCrossoverHz => SynthVoice.LowCrossoverHz;
+
+        /// <summary>Dělící kmitočet středy/výšky v Hz (zatím pevný, viz SynthVoice).</summary>
+        public double HighCrossoverHz => SynthVoice.HighCrossoverHz;
+
+        /// <summary>
+        /// True, pokud poslední vygenerovaný vzorek v NĚKTERÉM z pásem přesáhl
+        /// rozsah -1.0..1.0 (tedy došlo k oříznutí). Průchozí hodnota ze ToneEngine.
         /// </summary>
         public bool ClipDetected => _synth.ClipDetected;
 

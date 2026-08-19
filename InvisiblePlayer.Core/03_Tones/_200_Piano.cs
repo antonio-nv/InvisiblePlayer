@@ -5,6 +5,7 @@ namespace InvisiblePlayer.Core.Tones
     /// <summary>
     /// Ušlechtilé koncertní křídlo Petrof.
     /// Ušlechtilý plstěný úder, dlouhý dozvuk basů a jemné zázněry chóru strun.
+    /// Tělo tónu = fyzikální model struny (Karplus-Strong), viz PianoVoice.cs.
     /// </summary>
     public static class _200_Piano_Petrof
     {
@@ -14,11 +15,8 @@ namespace InvisiblePlayer.Core.Tones
             Number = 200,
             Instrument = InstrumentType.Piano,
 
-            // Amplitudy prvních 10 harmonických
-            PartialAmplitudes = new double[] { 1.00, 0.75, 0.50, 0.35, 0.22, 0.14, 0.08, 0.05, 0.03, 0.01 },
-
-            // Rychlost exponenciálního zhasínání v dB/s pro jednotlivé alikvóty
-            PartialDecayRates = new double[] { 0.45, 0.90, 1.50, 2.40, 3.60, 5.00, 6.80, 8.50, 11.00, 14.00 },
+            StringDecaySeconds = 9.0,  // Dlouhý ušlechtilý dozvuk
+            StringBrightness = 0.52,   // Plný, ne příliš jasný tón
 
             // Parametry filtru pro úder kladívka a rozladění strun
             ChiffFilterFreqHz = 450.0, // Měkké plstěné kladívko
@@ -38,8 +36,8 @@ namespace InvisiblePlayer.Core.Tones
             Number = 201,
             Instrument = InstrumentType.Piano,
 
-            PartialAmplitudes = new double[] { 1.00, 0.80, 0.60, 0.40, 0.20, 0.10, 0.05, 0.02, 0.01, 0.00 },
-            PartialDecayRates = new double[] { 1.20, 1.80, 2.50, 3.50, 5.00, 7.00, 9.00, 12.00, 15.00, 20.00 },
+            StringDecaySeconds = 4.5,  // Kratší, "elektrický" dozvuk
+            StringBrightness = 0.40,   // Jasnější, ostřejší tón
 
             ChiffFilterFreqHz = 1200.0,
             ChiffFilterQ = 1.0,
@@ -59,11 +57,8 @@ namespace InvisiblePlayer.Core.Tones
             Number = 202,
             Instrument = InstrumentType.Piano,
 
-            // Bohaté spektrum vytažených vyšších harmonických (plechový charakter)
-            PartialAmplitudes = new double[] { 1.00, 0.90, 0.80, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10 },
-
-            // Pomalé zhasínání výšek - struny rezonují a "řezají"
-            PartialDecayRates = new double[] { 0.70, 0.95, 1.20, 1.60, 2.10, 2.80, 3.60, 4.80, 6.00, 8.00 },
+            StringDecaySeconds = 6.0,
+            StringBrightness = 0.35,   // Nízké tlumení = drsnější, "rozstřesenější" tón
 
             ChiffFilterFreqHz = 2200.0, // Opotřebovaná tvrdá plsť až na dřevo
             ChiffFilterQ = 4.5,         // Silná inharmonicita rozladěných strun
