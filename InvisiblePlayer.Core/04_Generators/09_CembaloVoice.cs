@@ -34,6 +34,8 @@ namespace InvisiblePlayer.Core.Generators
 
         private readonly double _stringBrightness;
         private readonly double _stringDecaySeconds;
+        private readonly double _pickPosition;
+        private readonly double _excitationNoiseAmount;
 
         // --- Konec tónu podle prahu, ne (jen) podle pevného času ---
         private const double SilenceThresholdDb = -90.0;
@@ -51,18 +53,31 @@ namespace InvisiblePlayer.Core.Generators
         private readonly ThreeBandCrossover _toneCrossover;
         private readonly ThreeBandCrossover _pluckCrossover;
 
+        // Nepatrná rezonance ozvučné skříně - tenčí a "sušší" než u klavíru,
+        // ale právě tahle přídavná barva dělá rozdíl mezi cembalem a holou
+        // brnkanou strunou (harfou).
+        private readonly BandPassFilter _bodyResonanceLow = new BandPassFilter();
+        private readonly BandPassFilter _bodyResonanceHigh = new BandPassFilter();
+        private const double BodyGainLow = 0.10;
+        private const double BodyGainHigh = 0.14;
+
         public CembaloVoice(double sampleRate) : base(sampleRate)
         {
             _string = new KarplusStrongString(sampleRate);
 
             _stringBrightness = 0.30; // Nižší než klavír = jasnější, "kovovější" tón
             _stringDecaySeconds = 3.5; // Cembalo doznívá výrazně rychleji než klavír
+            _pickPosition = 0.09;          // Blíž kraji = víc vyšších harmonických, ostřejší tón
+            _excitationNoiseAmount = 0.10; // Brnknutí brčkem je "čistší" než úder plsti
 
             ConfigureEnvelope();
 
             _pluckFilter.SetParams(3800.0, 2.0, sampleRate);
             _toneCrossover = new ThreeBandCrossover(sampleRate);
             _pluckCrossover = new ThreeBandCrossover(sampleRate);
+
+            _bodyResonanceLow.SetParams(180.0, 3.5, sampleRate);
+            _bodyResonanceHigh.SetParams(650.0, 2.5, sampleRate);
         }
 
         public CembaloVoice(VoicePreset preset, double sampleRate) : this(sampleRate)
@@ -71,6 +86,8 @@ namespace InvisiblePlayer.Core.Generators
             {
                 _stringBrightness = Math.Clamp(preset.StringBrightness, 0.0, 0.98);
                 _stringDecaySeconds = Math.Max(0.2, preset.StringDecaySeconds);
+                _pickPosition = Math.Clamp(preset.PickPosition, 0.02, 0.5);
+                _excitationNoiseAmount = Math.Clamp(preset.ExcitationNoiseAmount, 0.0, 1.0);
 
                 double pluckFreq = preset.ChiffFilterFreqHz > 0 ? preset.ChiffFilterFreqHz : 3800.0;
                 double pluckQ = preset.ChiffFilterQ > 0 ? preset.ChiffFilterQ : 2.0;
@@ -103,7 +120,7 @@ namespace InvisiblePlayer.Core.Generators
             // tady známe skutečný kmitočet (viz komentář v ToneEngine.NoteOn).
             if (!_stringExcited)
             {
-                _string.Excite(frequency, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate);
+                _string.Excite(frequency, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate, _pickPosition, _excitationNoiseAmount);
                 _stringExcited = true;
             }
 
@@ -111,7 +128,12 @@ namespace InvisiblePlayer.Core.Generators
 
             double stringSample = _string.NextSample();
 
-            var toneSplit = _toneCrossover.Process((float)stringSample);
+            double body = _bodyResonanceLow.Process(stringSample) * BodyGainLow
+                        + _bodyResonanceHigh.Process(stringSample) * BodyGainHigh;
+
+            double toneSample = stringSample + body;
+
+            var toneSplit = _toneCrossover.Process((float)toneSample);
             bands.Bass += toneSplit.Bass;
             bands.Mid += toneSplit.Mid;
             bands.Treble += toneSplit.Treble;

@@ -16,7 +16,9 @@ namespace InvisiblePlayer.Core.Tones
             Instrument = InstrumentType.Piano,
 
             StringDecaySeconds = 9.0,  // Dlouhý ušlechtilý dozvuk
-            StringBrightness = 0.52,   // Plný, ne příliš jasný tón
+            StringBrightness = 0.82,   // Plný, ne příliš jasný tón  bylo 0.52
+            PickPosition = 0.3,           // Měkký úder plstěného kladívka blíž středu struny   bylo 0.15
+            ExcitationNoiseAmount = 0.20,  // Trocha texturního šumu k dechu úderu
 
             // Parametry filtru pro úder kladívka a rozladění strun
             ChiffFilterFreqHz = 450.0, // Měkké plstěné kladívko
@@ -32,12 +34,14 @@ namespace InvisiblePlayer.Core.Tones
     {
         public static VoicePreset Preset => new VoicePreset
         {
-            Name = "Piano Elektrické",
+            Name = "Piano Eletrické",
             Number = 201,
             Instrument = InstrumentType.Piano,
 
             StringDecaySeconds = 4.5,  // Kratší, "elektrický" dozvuk
             StringBrightness = 0.40,   // Jasnější, ostřejší tón
+            PickPosition = 0.10,
+            ExcitationNoiseAmount = 0.10,
 
             ChiffFilterFreqHz = 1200.0,
             ChiffFilterQ = 1.0,
@@ -59,6 +63,8 @@ namespace InvisiblePlayer.Core.Tones
 
             StringDecaySeconds = 6.0,
             StringBrightness = 0.35,   // Nízké tlumení = drsnější, "rozstřesenější" tón
+            PickPosition = 0.06,           // Blízko kraje - drsný, "cinkavý" opotřebovaný tón
+            ExcitationNoiseAmount = 0.35,  // Hodně texturního šumu - opotřebovaná plsť/struny
 
             ChiffFilterFreqHz = 2200.0, // Opotřebovaná tvrdá plsť až na dřevo
             ChiffFilterQ = 4.5,         // Silná inharmonicita rozladěných strun

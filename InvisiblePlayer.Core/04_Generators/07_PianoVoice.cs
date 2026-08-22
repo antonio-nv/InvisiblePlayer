@@ -25,6 +25,8 @@ namespace InvisiblePlayer.Core.Generators
         private readonly double _stringBrightness;
         private readonly double _stringDecaySeconds;
         private readonly double _detuneAmountHz;
+        private readonly double _pickPosition;
+        private readonly double _excitationNoiseAmount;
 
         // Transient úderu plstěného kladívka - krátký šumový "drc" navrch,
         // nezávislý na rezonanci struny samotné (beze změny oproti dřívějšku).
@@ -60,6 +62,8 @@ namespace InvisiblePlayer.Core.Generators
             _stringBrightness = 0.50;
             _stringDecaySeconds = 8.0;
             _detuneAmountHz = 0.35;
+            _pickPosition = 0.15;          // Blíž středu = měkčí úder plstěného kladívka
+            _excitationNoiseAmount = 0.20; // Kladívko má víc "texturního" šumu než ostré brnknutí
 
             ConfigureEnvelope();
 
@@ -78,6 +82,8 @@ namespace InvisiblePlayer.Core.Generators
                 _stringBrightness = Math.Clamp(preset.StringBrightness, 0.0, 0.98);
                 _stringDecaySeconds = Math.Max(0.2, preset.StringDecaySeconds);
                 _detuneAmountHz = preset.ModDepth;
+                _pickPosition = Math.Clamp(preset.PickPosition, 0.02, 0.5);
+                _excitationNoiseAmount = Math.Clamp(preset.ExcitationNoiseAmount, 0.0, 1.0);
 
                 double hammerFreq = preset.ChiffFilterFreqHz > 0 ? preset.ChiffFilterFreqHz : 450.0;
                 double hammerQ = preset.ChiffFilterQ > 0 ? preset.ChiffFilterQ : 1.2;
@@ -113,8 +119,8 @@ namespace InvisiblePlayer.Core.Generators
                 double freqA = frequency;
                 double freqB = frequency + _detuneAmountHz;
 
-                _stringA.Excite(freqA, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate);
-                _stringB.Excite(freqB, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate);
+                _stringA.Excite(freqA, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate, _pickPosition, _excitationNoiseAmount);
+                _stringB.Excite(freqB, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate, _pickPosition, _excitationNoiseAmount);
 
                 _stringExcited = true;
             }

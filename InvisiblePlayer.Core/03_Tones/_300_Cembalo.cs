@@ -18,6 +18,8 @@ namespace InvisiblePlayer.Core.Tones
 
             StringDecaySeconds = 3.5,  // Rychlejší dozvuk než klavír
             StringBrightness = 0.30,   // Jasnější, "kovovější" tón brnkané struny
+            PickPosition = 0.09,           // Blízko kraje - typické pro brnknutí brčkem
+            ExcitationNoiseAmount = 0.10,  // Brnknutí je "čistší" než úder plsti
 
             ChiffFilterFreqHz = 3800.0, // Ostré brnknutí brčkem (plectrum)
             ChiffFilterQ = 2.0

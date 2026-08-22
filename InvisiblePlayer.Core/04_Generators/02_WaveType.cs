@@ -64,6 +64,16 @@
         // Nižší = jasnější/ostřejší zvuk (cembalo), vyšší = tmavší/plnější (klavír).
         public double StringBrightness { get; set; } = 0.5;
 
+        // 0.02-0.5: poloha úderu/drnknutí jako podíl délky struny od kraje
+        // (viz KarplusStrongString.Excite). Blíž kraji = jasnější/"kovovější"
+        // tón (cembalo), blíž středu (0.5) = měkčí, temnější tón (klavír).
+        public double PickPosition { get; set; } = 0.125;
+
+        // 0.0-1.0: kolik šumu se přimíchá k deterministickému tvaru výchylky
+        // (textura úderu/drnknutí). Základní tón vždy nese ten deterministický
+        // tvar, ne šum - tohle je jen na "dech"/špínu zvuku navrch.
+        public double ExcitationNoiseAmount { get; set; } = 0.15;
+
         // --- Partiály pro Instrument == Bell (volitelné) ---
         // Pokud necháš null, BellVoice použije svůj vestavěný výchozí model.
         // Všechny tři pole musí mít stejnou délku (počet partiálů).
