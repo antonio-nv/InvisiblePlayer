@@ -9,11 +9,15 @@ namespace InvisiblePlayer.Core.Generators
     /// ruční tabulka harmonických, bohaté a přirozeně tlumené spektrum
     /// vzniká samo z fyziky zpožďovací smyčky.
     ///
-    /// K tomu navíc zůstává (beze změny oproti dřívějšku):
-    ///  - dvě mírně rozladěné struny v chóru (unison) pro živý dozvuk se zázněry,
+    /// K tomu navíc zůstává:
+    ///  - dvě rozladěné struny v chóru (unison) pro živý dozvuk se zázněry -
+    ///    OPRAVA: rozladění teď škáluje procentuálně (v centech), ne pevným
+    ///    počtem Hz, jinak byl u basů podíl rozladění vůči kmitočtu obrovský
+    ///    (skoro 2 půltóny u nejhlubší oktávy u presetu 202) a u výšek
+    ///    zanedbatelný - viz komentář u CalculateWaveform,
     ///  - krátký šumový transient úderu plstěného kladívka,
-    ///  - a nově malá rezonance ozvučné desky (dva paralelní rezonátory),
-    ///    která tělu tónu dodává teplo/barvu, kterou samotná struna nemá.
+    ///  - a malá rezonance ozvučné desky (dva paralelní rezonátory), která
+    ///    tělu tónu dodává teplo/barvu, kterou samotná struna nemá.
     /// </summary>
     public class PianoVoice : SynthVoice
     {
@@ -24,7 +28,7 @@ namespace InvisiblePlayer.Core.Generators
 
         private readonly double _stringBrightness;
         private readonly double _stringDecaySeconds;
-        private readonly double _detuneAmountHz;
+        private readonly double _detuneCents;
         private readonly double _pickPosition;
         private readonly double _excitationNoiseAmount;
 
@@ -61,7 +65,7 @@ namespace InvisiblePlayer.Core.Generators
 
             _stringBrightness = 0.50;
             _stringDecaySeconds = 8.0;
-            _detuneAmountHz = 0.35;
+            _detuneCents = 4.0;
             _pickPosition = 0.15;          // Blíž středu = měkčí úder plstěného kladívka
             _excitationNoiseAmount = 0.20; // Kladívko má víc "texturního" šumu než ostré brnknutí
 
@@ -81,7 +85,7 @@ namespace InvisiblePlayer.Core.Generators
             {
                 _stringBrightness = Math.Clamp(preset.StringBrightness, 0.0, 0.98);
                 _stringDecaySeconds = Math.Max(0.2, preset.StringDecaySeconds);
-                _detuneAmountHz = preset.ModDepth;
+                _detuneCents = preset.ModDepth;
                 _pickPosition = Math.Clamp(preset.PickPosition, 0.02, 0.5);
                 _excitationNoiseAmount = Math.Clamp(preset.ExcitationNoiseAmount, 0.0, 1.0);
 
@@ -117,7 +121,14 @@ namespace InvisiblePlayer.Core.Generators
             if (!_stringExcited)
             {
                 double freqA = frequency;
-                double freqB = frequency + _detuneAmountHz;
+                // POZOR - OPRAVA: rozladění druhé struny bývalo pevný počet Hz
+                // (frequency + _detuneAmountHz). Pevný Hz posun je ale u basů
+                // OBROVSKÝ podíl kmitočtu a u výšek zanedbatelný - u ModDepth
+                // 3.2 Hz to u nejhlubší oktávy (cca 27 Hz) znamenalo skoro 2
+                // půltóny nahoru! Rozladění teď škáluje procentuálně (v
+                // centech), takže "míra rozladění chóru" zůstává napříč celou
+                // klaviaturou stejná, jak má.
+                double freqB = frequency * Math.Pow(2.0, _detuneCents / 1200.0);
 
                 _stringA.Excite(freqA, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate, _pickPosition, _excitationNoiseAmount);
                 _stringB.Excite(freqB, _stringBrightness, _stringDecaySeconds, _exciteNoise, (int)SampleRate, _pickPosition, _excitationNoiseAmount);

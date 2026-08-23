@@ -14,7 +14,7 @@ namespace InvisiblePlayer.Core.Tones
             Name = "Piano Petrof",
             Number = 200,
             Instrument = InstrumentType.Piano,
-
+            Temperament = Temperament.QuarterCommaMeantone,
             StringDecaySeconds = 9.0,  // Dlouhý ušlechtilý dozvuk
             StringBrightness = 0.82,   // Plný, ne příliš jasný tón  bylo 0.52
             PickPosition = 0.3,           // Měkký úder plstěného kladívka blíž středu struny   bylo 0.15
@@ -23,7 +23,7 @@ namespace InvisiblePlayer.Core.Tones
             // Parametry filtru pro úder kladívka a rozladění strun
             ChiffFilterFreqHz = 450.0, // Měkké plstěné kladívko
             ChiffFilterQ = 1.2,        // Mírná inharmonicita
-            ModDepth = 0.25            // Jemné rozladění chóru strun (Hz) pro živost
+            ModDepth = 4.0              // Jemné rozladění chóru strun (v CENTECH) pro živost
         };
     }
 
@@ -34,10 +34,10 @@ namespace InvisiblePlayer.Core.Tones
     {
         public static VoicePreset Preset => new VoicePreset
         {
-            Name = "Piano Eletrické",
+            Name = "Piano Elektrické",
             Number = 201,
             Instrument = InstrumentType.Piano,
-
+            Temperament = Temperament.QuarterCommaMeantone,
             StringDecaySeconds = 4.5,  // Kratší, "elektrický" dozvuk
             StringBrightness = 0.40,   // Jasnější, ostřejší tón
             PickPosition = 0.10,
@@ -45,7 +45,7 @@ namespace InvisiblePlayer.Core.Tones
 
             ChiffFilterFreqHz = 1200.0,
             ChiffFilterQ = 1.0,
-            ModDepth = 0.05
+            ModDepth = 1.5
         };
     }
 
@@ -60,7 +60,7 @@ namespace InvisiblePlayer.Core.Tones
             Name = "Piano Limonádový Joe",
             Number = 202,
             Instrument = InstrumentType.Piano,
-
+            Temperament = Temperament.QuarterCommaMeantone,
             StringDecaySeconds = 6.0,
             StringBrightness = 0.35,   // Nízké tlumení = drsnější, "rozstřesenější" tón
             PickPosition = 0.06,           // Blízko kraje - drsný, "cinkavý" opotřebovaný tón
@@ -68,7 +68,7 @@ namespace InvisiblePlayer.Core.Tones
 
             ChiffFilterFreqHz = 2200.0, // Opotřebovaná tvrdá plsť až na dřevo
             ChiffFilterQ = 4.5,         // Silná inharmonicita rozladěných strun
-            ModDepth = 3.20             // Extrémní rozladění chóru strun pro rozstřesený saloonový tón
+            ModDepth = 30.0             // Extrémní rozladění chóru strun (v CENTECH) pro rozstřesený saloonový tón
         };
     }
 }

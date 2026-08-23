@@ -34,9 +34,58 @@ namespace InvisiblePlayer.Core.Generators
     ///     vzorků) - tam se to projevovalo jako zázněje/součtové kmitočty.
     ///     Allpass filtr zpoždění doladí přesně, beze změny amplitudy na
     ///     žádném kmitočtu.
+    ///
+    ///  3) KOMPENZACE ZPOŽDĚNÍ SMYČKOVÉHO FILTRU: samotná dolní propust ve
+    ///     smyčce (brightness) přidává do smyčky další zpoždění (cca
+    ///     brightness/(1-brightness) vzorku), o kterém výpočet frac/allpass
+    ///     jinak vůbec neví. U basů zanedbatelné, u vysokých tónů (krátká
+    ///     smyčka) to bez kompenzace znamenalo citelné, s výškou tónu
+    ///     NARŮSTAJÍCÍ rozladění - ověřeno simulací, u vysokého brightness
+    ///     klidně přes půl tónu.
+    ///
+    ///  4) SYMETRICKÝ (BIPOLÁRNÍ) BUDICÍ TVAR: trojúhelník posunutý na
+    ///     rozsah -1..+1 místo 0..+1. Jednostranně kladný tvar v sobě nese
+    ///     stejnosměrnou složku, která se při silné dolní propusti ve smyčce
+    ///     a krátké smyčce (vysoký tón) dokázala "zaseknout" a přehlušit
+    ///     samotné kmitání na cílovém kmitočtu - slyšitelně jako "chybí
+    ///     základní tón, jen dozvuk bez výšky".
+    ///
+    ///  5) AUTOMATICKÉ ZJEMNĚNÍ (TAPER) BRIGHTNESS U VYSOKÝCH TÓNŮ: i s
+    ///     opravou č. 3 platí, že VELMI vysoký brightness (typicky přes
+    ///     ~0.6-0.7) kombinovaný s VELMI krátkou smyčkou (pár desítek
+    ///     vzorků, tedy tóny zhruba od jednočárkované oktávy nahoru) dělá
+    ///     z Thiran allpassu nespolehlivý odhad - ověřeno simulací, jinak
+    ///     tam zůstávalo rozladění v řádu desítek až stovek centů. Řešení:
+    ///     nad TaperStartHz efektivní brightness plynule klesá směrem k
+    ///     TaperFloorBrightness, takže krátká smyčka nikdy nemusí kombinovat
+    ///     extrémní brightness s extrémně málo vzorky. Basy a středy (kde na
+    ///     tom barva zvuku nejvíc záleží) zůstávají beze změny - taper se jich
+    ///     vůbec netýká, dokud je brightness presetu pod TaperFloorBrightness
+    ///     (např. cembalo, elektrické piano). Mimochodem takhle se chová i
+    ///     skutečná struna - ve výškách je přirozeně méně tlumená/jasnější.
+    ///  6) OPRAVA VÝPOČTU DOZNÍVÁNÍ (-60 dB ZA decaySeconds): _loopGain se v
+    ///     NextSample() násobí KAŽDÝ VZOREK (protože dolní propust ve smyčce
+    ///     má vlastní stav sdílený napříč celým bufferem, ne jen v jedné
+    ///     konkrétní pozici) - ne jednou za periodu, jak by se dalo čekat.
+    ///     Původní výpočet ale předpokládal "jednou za periodu" (periody =
+    ///     decaySeconds*frequencyHz) - ve skutečnosti se tak základní tón
+    ///     doznil o -60 dB za decaySeconds*frequencyHz VZORKŮ, ne SEKUND -
+    ///     u basů to bylo klidně 100-200x rychleji, než mělo. Opraveno na
+    ///     decaySeconds*_sampleRate (počet vzorků za sekundu), takže dozvuk
+    ///     teď trvá skutečně tolik sekund, kolik decaySeconds říká, bez
+    ///     ohledu na kmitočet tónu.
     /// </summary>
     public class KarplusStrongString
     {
+        // Viz komentář u třídy, bod 5 - od kolika Hz začne brightness klesat,
+        // kde skončí na podlaze a jaká ta podlaha je. Presety s brightness
+        // pod TaperFloorBrightness (cembalo, elektrické piano) taper vůbec
+        // nepocítí - ten se zapojí, jen když by brightness presetu jinak
+        // zůstal nad podlahou i ve výškách.
+        private const double TaperStartHz = 700.0;
+        private const double TaperEndHz = 2200.0;
+        private const double TaperFloorBrightness = 0.40;
+
         private readonly double _sampleRate;
         private float[]? _buffer;
         private int _writeIndex;
@@ -87,7 +136,34 @@ namespace InvisiblePlayer.Core.Generators
         {
             if (frequencyHz < 1.0) frequencyHz = 1.0;
 
+            double clampedBrightness = Math.Clamp(brightness, 0.0, 0.98);
+
+            // Taper (viz komentář u třídy, bod 5) - u vysokých tónů plynule
+            // stáhne brightness k bezpečné podlaze, ať se u krátké smyčky
+            // nepotká extrémní brightness s extrémně málo vzorky na periodu.
+            if (frequencyHz > TaperStartHz)
+            {
+                double t = Math.Clamp((frequencyHz - TaperStartHz) / (TaperEndHz - TaperStartHz), 0.0, 1.0);
+                double floor = Math.Min(clampedBrightness, TaperFloorBrightness);
+                clampedBrightness = clampedBrightness + (floor - clampedBrightness) * t;
+            }
+
             double delaySamples = _sampleRate / frequencyHz;
+
+            // Dolní propust ve smyčce (brightness) sama o sobě přidává do
+            // smyčky kus zpoždění navíc (cca brightness/(1-brightness) vzorku,
+            // odhad platný pro nízké kmitočty vůči vzorkovacímu). Beze
+            // kompenzace se to u basů ztratí v zaokrouhlovací chybě, ale u
+            // vysokých tónů (pár desítek vzorků na periodu) je to už
+            // znatelné a NARŮSTAJÍCÍ rozladění, tím horší, čím vyšší tón a
+            // čím vyšší brightness - přesně jev "čím výš, tím víc rozladěné".
+            double filterDelayComp = clampedBrightness / (1.0 - clampedBrightness);
+            // Pojistka: u velmi vysokých tónů + velmi vysoké brightness by
+            // kompenzace sama sežrala skoro celou periodu - necháme aspoň
+            // slušný kus periody pro vlastní zpožďovací buffer.
+            filterDelayComp = Math.Min(filterDelayComp, delaySamples * 0.7);
+            delaySamples = Math.Max(2.0, delaySamples - filterDelayComp);
+
             int delayInt = Math.Max(1, (int)delaySamples);
             double frac = delaySamples - delayInt;
 
@@ -112,13 +188,20 @@ namespace InvisiblePlayer.Core.Generators
             FillExcitation(_buffer, noise, sampleRateInt, pickPosition, noiseAmount);
 
             _writeIndex = 0;
-            _brightness = Math.Clamp(brightness, 0.0, 0.98);
+            _brightness = clampedBrightness;
             _loopFilterPrev = 0.0;
 
-            // Zesílení smyčky spočtené tak, aby ZÁKLADNÍ tón doznil o -60 dB
-            // (= 10^(-3)) za decaySeconds.
-            double periodsInDecay = Math.Max(1.0, decaySeconds * frequencyHz);
-            _loopGain = Math.Pow(10.0, -3.0 / periodsInDecay);
+            // POZOR - DŮLEŽITÁ OPRAVA: _loopGain se dole v NextSample() násobí
+            // KAŽDÝ VZOREK (ne jednou za periodu, jak by se dalo čekat u
+            // zpožďovací smyčky) - protože dolní propust ve smyčce má vlastní
+            // stav (_loopFilterPrev), který žije napříč celým bufferem, ne jen
+            // v jedné konkrétní pozici. Proto se decaySeconds musí přepočítat
+            // na POČET VZORKŮ za sekundu (sampleRate), ne na počet period za
+            // sekundu (frequencyHz) - jinak doznívání vychází kratší v poměru
+            // sampleRate/frequencyHz, tedy o to výrazněji kratší, čím nižší
+            // tón (u basů klidně 100-200x kratší, než bylo zamýšleno).
+            double samplesInDecay = Math.Max(1.0, decaySeconds * _sampleRate);
+            _loopGain = Math.Pow(10.0, -3.0 / samplesInDecay);
         }
 
         private static void FillExcitation(float[] buffer, NoiseGenerator noise, int sampleRateInt,
@@ -132,6 +215,14 @@ namespace InvisiblePlayer.Core.Generators
             double clampedPick = Math.Clamp(pickPosition, 0.02, 0.5);
             int peakIndex = Math.Max(1, Math.Min(n - 2, (int)(n * clampedPick)));
 
+            // Tvar necháme trojúhelníkový (0 v krajích, 1 ve vrcholu v místě
+            // úderu), ale nakonec ho posuneme a roztáhneme na -1..+1 misto
+            // 0..1. Nesymetrický (jednostranně kladný) budicí impuls totiž
+            // v sobě nese kus stejnosměrné složky - ta se v silné dolní
+            // propusti ve smyčce (vysoký brightness) umí "zaseknout" a u
+            // krátkých bufferů (vysoké tóny) pak převládne nad samotným
+            // kmitáním na cílovém kmitočtu. Symetrický tvar žádnou
+            // stejnosměrnou složku nenese.
             var shape = new float[n];
             for (int i = 0; i <= peakIndex; i++)
             {
@@ -140,6 +231,10 @@ namespace InvisiblePlayer.Core.Generators
             for (int i = peakIndex; i < n; i++)
             {
                 shape[i] = (float)(n - 1 - i) / (n - 1 - peakIndex);
+            }
+            for (int i = 0; i < n; i++)
+            {
+                shape[i] = shape[i] * 2.0f - 1.0f;
             }
 
             double clampedNoise = Math.Clamp(noiseAmount, 0.0, 1.0);

@@ -21,7 +21,6 @@ namespace InvisiblePlayer.Core.ToneEngine
     {
 
         private readonly double _sampleRate;
-        private readonly Temperament _temperament;
 
         // Seznam právě znějících hlasů - napříč VŠEMI aktivními rejstříky najednou
         private readonly List<ActiveNote> _activeNotes = new List<ActiveNote>();
@@ -59,6 +58,8 @@ namespace InvisiblePlayer.Core.ToneEngine
                 _201_Piano_Eletricke.Preset,
                 _202_Piano_LimonadovyJoe.Preset,
                 _300_Cembalo_RandallHopkirk.Preset,
+                _500_Piano_Additivni.Preset,
+                _501_Cembalo_Additivni.Preset,
                 _400_Zvon_Zikmund.Preset,
             };
 
@@ -87,10 +88,13 @@ namespace InvisiblePlayer.Core.ToneEngine
             return dict;
         }
 
+        // Parametr temperament tu zůstává kvůli zpětné kompatibilitě (kdyby ho
+        // někde volalo starší UI), ale už se nepoužívá - ladění se teď určuje
+        // ZVLÁŠŤ pro každý rejstřík podle VoicePreset.Temperament (viz NoteOn
+        // níž), ne jednou společně pro celý engine.
         public ToneEngine(double sampleRate = 44100.0, Temperament? temperament = null)
         {
             _sampleRate = sampleRate;
-            _temperament = temperament ?? new Temperament(); // default = rovnoměrná
 
             // Výchozí stav při startu aplikace - ať to hned po spuštění hraje
             // (jako doteď), ne že by bylo úplně potichu, dokud něco nezmáčkneš.
@@ -166,13 +170,23 @@ namespace InvisiblePlayer.Core.ToneEngine
 
         public void NoteOn(int noteNumber)
         {
-            double freq = 440.0 * Math.Pow(2.0, (noteNumber - 69) / 12.0)
-                        * Math.Pow(2.0, _temperament.CentOffset(noteNumber) / 1200.0);
-
             lock (_lock)
             {
                 foreach (int registerNumber in _activeRegisters)
                 {
+                    if (!_presetRegistry.TryGetValue(registerNumber, out var preset))
+                        continue; // pro jistotu - nemělo by nastat
+
+                    // OPRAVA: kmitočet se teď počítá ZVLÁŠŤ pro každý rejstřík,
+                    // podle JEHO VLASTNÍ temperatury (preset.Temperament) - ne
+                    // jednou společně pro všechny rejstříky najednou jako
+                    // dřív. Díky tomu můžou dva rejstříky znít současně každý
+                    // v jiném ladění (např. jeden rovnoměrně, druhý
+                    // středotónově) - přesně jak to dělají skutečné varhany
+                    // s víc temperovanými soustavami píšťal.
+                    double freq = 440.0 * Math.Pow(2.0, (noteNumber - 69) / 12.0)
+                                * Math.Pow(2.0, preset.Temperament.CentOffset(noteNumber) / 1200.0);
+
                     // Pokud tahle kombinace (nota + rejstřík) už hraje, jen ji
                     // znovu "nadechneme" (retrigger), nevytváříme duplicitní instanci.
                     var existing = _activeNotes.Find(n =>
@@ -184,9 +198,6 @@ namespace InvisiblePlayer.Core.ToneEngine
                         existing.Frequency = freq;
                         continue;
                     }
-
-                    if (!_presetRegistry.TryGetValue(registerNumber, out var preset))
-                        continue; // pro jistotu - nemělo by nastat
 
                     var voice = CreateVoice(preset, _sampleRate);
                     voice.NoteOn();
@@ -228,6 +239,8 @@ namespace InvisiblePlayer.Core.ToneEngine
                     return new CembaloVoice(preset, sampleRate);
                 case InstrumentType.Bell:
                     return new BellVoice(preset, sampleRate);
+                case InstrumentType.AdditiveString:
+                    return new AdditiveStringVoice(preset, sampleRate);
                 case InstrumentType.Organ:
                 default:
                     return new OrganVoice(preset, sampleRate);

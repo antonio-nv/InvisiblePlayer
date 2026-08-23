@@ -8,6 +8,7 @@ namespace InvisiblePlayer.Core.Tones
             // TADY JE TA ZMĚNA: Přidat přesný typ pole
             Name = "Bombard16Preset",
             Number = 01,
+            Temperament = Temperament.QuarterCommaMeantone,
             Harmonics = new (double Ratio, double Amp)[]
             {
                 (1.0, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)

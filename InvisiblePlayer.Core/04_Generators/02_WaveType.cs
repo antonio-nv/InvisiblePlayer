@@ -16,7 +16,8 @@
         Organ,
         Piano,
         Cembalo,
-        Bell
+        Bell,
+        AdditiveString // Provizorní aditivní (alikvotová) struna - viz AdditiveStringVoice.cs
     }
 
     public class VoicePreset
@@ -30,6 +31,14 @@
 
         // Který nástroj/engine preset používá.
         public InstrumentType Instrument { get; set; } = InstrumentType.Organ;
+
+        // Ladění (temperatura) tohoto konkrétního rejstříku - viz Temperament.cs.
+        // Výchozí je obyčejná rovnoměrná temperatura (Equal), stejná pro
+        // všechny tóny/rejstříky jako doteď. Každý rejstřík si ale teď může
+        // nést svou VLASTNÍ temperaturu (Temperament.QuarterCommaMeantone,
+        // Temperament.MelzerGeorgKratkyI, nebo si klidně napiš vlastní) -
+        // viz ToneEngine.NoteOn, kde se používá per-rejstřík, ne globálně.
+        public Temperament Temperament { get; set; } = Temperament.Equal;
 
         // Tabulka alikvót: (poměr frekvence, hlasitost). Používá OrganVoice,
         // a volitelně i PianoVoice/CembaloVoice (viz jejich preset-konstruktor)
