@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -74,19 +75,27 @@ namespace InvisiblePlayer.Analyzer
             var mainPeak = pikes.OrderByDescending(p => p.Db).First();
             double fMax = mainPeak.Freq;
 
-            // Seřadíme všechny píky podle amplitudy (nejsilnější první)
-            var sortedPikes = pikes.OrderByDescending(p => p.Db).Take(12).ToList();
+            // Seřazeno vzestupně podle násobku (základní tón první, pak nahoru) -
+            // takhle se to nejpřirozeněji čte i rovnou opisuje do presetu.
+            var sortedPikes = pikes.OrderByDescending(p => p.Db).Take(12)
+                                    .OrderBy(p => p.Freq / fMax)
+                                    .ToList();
 
-            var lines = new System.Collections.Generic.List<string>();
-            foreach (var p in sortedPikes)
-            {
-                double ratio = p.Freq / fMax; // Koeficient (př. 0.3333x, 0.5000x, 2.0000x)
-                double relDb = p.Db - mainPeak.Db;
-                lines.Add($"{p.Freq:F1}Hz ({ratio:F4}x | {relDb:F1}dB)");
-            }
+            var ratios = sortedPikes.Select(p => p.Freq / fMax).ToList();
+            var relDbs = sortedPikes.Select(p => p.Db - mainPeak.Db).ToList();
+            // dB -> lineární amplituda (0 dB = 1.0), jak to čeká PartialAmplitudes.
+            var amps = relDbs.Select(db => Math.Pow(10.0, db / 20.0)).ToList();
 
-            return $"[VARHANY] DOMINANTA = {fMax:F1} Hz ({mainPeak.Db:F1} dBFS)\n" +
-                   $"Top Čáry (Hz | Násobek | Rel dB): " + string.Join(" | ", lines);
+            string ratiosLine = "PartialRatios    = new[] { " +
+                string.Join(", ", ratios.Select(r => r.ToString("F4", CultureInfo.InvariantCulture))) + " },";
+            string ampsLine = "PartialAmplitudes = new[] { " +
+                string.Join(", ", amps.Select(a => a.ToString("F4", CultureInfo.InvariantCulture))) + " },";
+            string dbLine = "// dB (info):        " +
+                string.Join(" | ", relDbs.Select(db => db.ToString("F1", CultureInfo.InvariantCulture)));
+
+            return string.Format(CultureInfo.InvariantCulture,
+                "[VARHANY] DOMINANTA = {0:F1} Hz ({1:F1} dBFS)\n", fMax, mainPeak.Db) +
+                   ratiosLine + "\n" + ampsLine + "\n" + dbLine;
         }
 
         // 🔔 KOUZLO 2: ZVONY (Přesná spektrální analýza inharmonických piků)
@@ -105,10 +114,11 @@ namespace InvisiblePlayer.Analyzer
             foreach (var p in topPikes)
             {
                 double ratio = p.Freq / fMax;
-                lines.Add($"{p.Freq:F1}Hz ({ratio:F4}x | {p.Db:F1}dB)");
+                lines.Add(string.Format(CultureInfo.InvariantCulture,
+                    "{0:F1}Hz ({1:F4}x | {2:F1}dB)", p.Freq, ratio, p.Db));
             }
 
-            return $"[ZVON] Hlavní pík: {fMax:F1} Hz\n" +
+            return string.Format(CultureInfo.InvariantCulture, "[ZVON] Hlavní pík: {0:F1} Hz\n", fMax) +
                    $"Inharmonická řada čár: " + string.Join(" | ", lines);
         }
 
@@ -170,9 +180,11 @@ namespace InvisiblePlayer.Analyzer
                 if (dbs[i] <= target20Db) { fHigh20 = freqs[i]; break; }
             }
 
-            return $"[ŠUM / FILTR] Předpis pro filtr bílého šumu:\n" +
-                   $"1. PÁSMOVÁ PROPUST (BPF 2.řád, 20dB/dek): Střed f0 = {f0:F0} Hz | Jakost Q ≈ {Q:F2}\n" +
-                   $"2. KASKÁDA (HP + LP 20dB/dek): HP Cutoff (-20dB) = {fLow20:F0} Hz | LP Cutoff (-20dB) = {fHigh20:F0} Hz";
+            return string.Format(CultureInfo.InvariantCulture,
+                "[ŠUM / FILTR] Předpis pro filtr bílého šumu:\n" +
+                "1. PÁSMOVÁ PROPUST (BPF 2.řád, 20dB/dek): Střed f0 = {0:F0} Hz | Jakost Q ≈ {1:F2}\n" +
+                "2. KASKÁDA (HP + LP 20dB/dek): HP Cutoff (-20dB) = {2:F0} Hz | LP Cutoff (-20dB) = {3:F0} Hz",
+                f0, Q, fLow20, fHigh20);
         }
 
 
@@ -387,7 +399,7 @@ namespace InvisiblePlayer.Analyzer
             {
                 // 1. VU METR SE AKTUALIZUJE VŽDY
                 VuMeter.Value = vuPercent;
-                TxtVuDb.Text = $"{peakDb:F1} dB";
+                TxtVuDb.Text = peakDb.ToString("F1", CultureInfo.InvariantCulture) + " dB";
 
                 if (peakDb >= -1.0)
                     VuMeter.Foreground = new SolidColorBrush(MediaColor.FromRgb(231, 76, 60));

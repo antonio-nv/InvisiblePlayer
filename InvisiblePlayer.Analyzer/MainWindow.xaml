@@ -40,7 +40,7 @@
         <ScottPlot:WpfPlot x:Name="WpfPlot1" Grid.Row="1" Foreground="White"/>
 
         <!-- 2. VÝSTUP KOUZLA (Text) - Dáno na samostatný řádek s dostatečnou výškou -->
-        <TextBox x:Name="TxtMagicOutput" Grid.Row="2" Height="50" Margin="0,8,0,8" 
+        <TextBox x:Name="TxtMagicOutput" Grid.Row="2" Height="90" Margin="0,8,0,8" 
                  Background="#111111" Foreground="#00FF66" FontFamily="Consolas" 
                  FontSize="12" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
                  Text="Zde se zobrazí výsledný matematický popis zachyceného zvuku..."/>

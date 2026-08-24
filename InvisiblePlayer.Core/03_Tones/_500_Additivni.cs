@@ -28,11 +28,8 @@ namespace InvisiblePlayer.Core.Tones
             ChiffFilterQ = 1.2,
             ExcitationNoiseAmount = 0.30,
 
-            PartialRatios = new double[] { 1, 2, 3, 4, 5, 6, 7, 8 },
-            PartialAmplitudes = new double[]
-            {
-                0.50, 0.23, 0.14, 0.09, 0.05, 0.03, 0.013, 0.003
-            },
+            PartialRatios = new[] { 0.3359, 0.6641, 1.0000, 1.3359, 1.4531, 1.4922, 1.6641, 3.3359, 3.6641, 4.0000, 4.6641, 5.6719 },
+            PartialAmplitudes = new[] { 0.8334, 0.1658, 1.0000, 0.2770, 0.0196, 0.0234, 0.0689, 0.0245, 0.0323, 0.0420, 0.0211, 0.0207 },
             PartialDecayRates = new double[]
             {
                 0.77, 1.34, 1.85, 2.33, 2.78, 3.22, 3.64, 4.05
