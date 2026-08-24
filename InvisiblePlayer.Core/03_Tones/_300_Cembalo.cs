@@ -4,9 +4,9 @@ namespace InvisiblePlayer.Core.Tones
 {
     /// <summary>
     /// Tělo tónu = fyzikální model struny (Karplus-Strong), viz CembaloVoice.cs.
-    /// Harmonics/PartialAmplitudes se u Cembalo presetů nepoužívají (na rozdíl
-    /// od dřívějška) - barvu teď řídí StringBrightness/StringDecaySeconds a
-    /// ostrost brnknutí ChiffFilterFreqHz/ChiffFilterQ.
+    /// PartialRatios/PartialAmplitudes se u Cembalo presetů nepoužívají -
+    /// barvu teď řídí StringBrightness/StringDecaySeconds a ostrost brnknutí
+    /// ChiffFilterFreqHz/ChiffFilterQ.
     /// </summary>
     public static class _300_Cembalo_RandallHopkirk
     {

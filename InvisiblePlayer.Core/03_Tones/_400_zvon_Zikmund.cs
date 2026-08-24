@@ -13,10 +13,10 @@ namespace InvisiblePlayer.Core.Tones
             Name = "Zikmund",
             Number = 400,
             Instrument = InstrumentType.Bell,
-            Harmonics = new (double Ratio, double Amp)[]
-            {
-                (0.501, 0.35), (1.000, 0.55), (1.502, 0.4), (2.514, 0.50)
-            },
+            //Harmonics = new (double Ratio, double Amp)[]
+            //{
+            //    (0.501, 0.35), (1.000, 0.55), (1.502, 0.4), (2.514, 0.50)
+            //},
 
             // Vlastní partiály - klidně i jiný počet než výchozích 7
             PartialRatios = new[] { 0.500, 1.0, 1.2, 1,5, 2.0, 3.0 },

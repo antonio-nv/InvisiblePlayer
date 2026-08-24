@@ -9,6 +9,8 @@ namespace InvisiblePlayer.Core.Generators
     public class OrganVoice : SynthVoice
     {
         private readonly VoicePreset _preset;
+        private readonly double[] _partialRatios;
+        private readonly double[] _partialAmplitudes;
         private double[] _phases;
         private double _chiffEnvelope = 1.0;
         private readonly NoiseGenerator _noiseGen = new NoiseGenerator();
@@ -23,7 +25,18 @@ namespace InvisiblePlayer.Core.Generators
         public OrganVoice(VoicePreset preset, double sampleRate) : base(sampleRate)
         {
             _preset = preset;
-            _phases = new double[_preset.Harmonics.Length];
+
+            // Bezpečnostní záchytka - kdyby na rejstřík při tom velkém ručním
+            // přepisu ze svatovítské analýzy někdo zapomněl (nebo ho teprve
+            // rozepisuje), radši tichý čistý sinus na základním tónu, než pád.
+            bool hasPartials =
+                preset.PartialRatios != null && preset.PartialAmplitudes != null &&
+                preset.PartialRatios.Length > 0 &&
+                preset.PartialRatios.Length == preset.PartialAmplitudes.Length;
+
+            _partialRatios = hasPartials ? preset.PartialRatios : new double[] { 1.0 };
+            _partialAmplitudes = hasPartials ? preset.PartialAmplitudes : new double[] { 1.0 };
+            _phases = new double[_partialRatios.Length];
 
             // VARHANNÍ OBÁLKA:
             NoteEnvelope.AttackTime = 0.015f;  // Rychlý náběh
@@ -45,14 +58,19 @@ namespace InvisiblePlayer.Core.Generators
         {
             BandSample bands = default;
 
-            // 1. Zvuk alikvótních píšťal (Harmonics) - čistá sinusovka má přesně
-            // daný kmitočet, takže ji rovnou zařadíme do správného pásma podle
-            // toho, kolik Hz doopravdy má. Žádné filtrování netřeba.
-            for (int i = 0; i < _preset.Harmonics.Length; i++)
+            // 1. Zvuk alikvótních píšťal - stejné pole jako u Bell/AdditiveString
+            // (PartialRatios/PartialAmplitudes), jen se tady VŮBEC nepoužívá
+            // PartialDecayRates - foukaná píšťala hraje na konstantní hlasitosti,
+            // dokud se drží klávesa, celý tón "zhasne" najednou přes ADSR
+            // Release (viz konstruktor výš), ne alikvot po alikvotu. Čistá
+            // sinusovka má přesně daný kmitočet, takže ji rovnou zařadíme do
+            // správného pásma podle toho, kolik Hz doopravdy má - žádné
+            // filtrování netřeba.
+            for (int i = 0; i < _partialRatios.Length; i++)
             {
-                double harmonicFreq = frequency * _preset.Harmonics[i].FrequencyMultiplier;
-                double phase = AdvancePhase(ref _phases[i], _preset.Harmonics[i].FrequencyMultiplier, frequency);
-                double value = Math.Sin(phase * 2.0 * Math.PI) * _preset.Harmonics[i].Amplitude;
+                double harmonicFreq = frequency * _partialRatios[i];
+                double phase = AdvancePhase(ref _phases[i], _partialRatios[i], frequency);
+                double value = Math.Sin(phase * 2.0 * Math.PI) * _partialAmplitudes[i];
 
                 AddToBand(ref bands, harmonicFreq, value);
             }

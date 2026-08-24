@@ -40,10 +40,23 @@
         // viz ToneEngine.NoteOn, kde se používá per-rejstřík, ne globálně.
         public Temperament Temperament { get; set; } = Temperament.Equal;
 
-        // Tabulka alikvót: (poměr frekvence, hlasitost). Používá OrganVoice,
-        // a volitelně i PianoVoice/CembaloVoice (viz jejich preset-konstruktor)
-        // pro přepsání výchozí barvy zvuku.
-        public (double FrequencyMultiplier, double Amplitude)[] Harmonics { get; set; }
+        // SJEDNOCENÁ tabulka alikvót pro VŠECHNY nástroje (Organ/Bell/
+        // AdditiveString) - poměr kmitočtu, hlasitost, a volitelně rychlost
+        // doznívání toho konkrétního alikvotu.
+        //
+        // PartialDecayRates je NEPOVINNÉ (smí zůstat null) - použij ho jen
+        // tam, kde KAŽDÝ alikvot doznívá svou vlastní rychlostí i během
+        // "sustain" (úder/brnknutí/zvon - BellVoice, AdditiveStringVoice).
+        // OrganVoice ho ignoruje úplně, protože foukaná píšťala hraje na
+        // konstantní hlasitosti, dokud se drží klávesa - celý tón zhasne
+        // najednou přes ADSR Release, ne alikvot po alikvotu.
+        //
+        // PianoVoice a CembaloVoice nečtou ani jedno z těchhle polí - mají
+        // svou barvu zadrátovanou přímo ve fyzikálním modelu strun
+        // (Karplus-Strong).
+        public double[] PartialRatios { get; set; } = null;
+        public double[] PartialAmplitudes { get; set; } = null;
+        public double[] PartialDecayRates { get; set; } = null;
 
         // Parametry Šumu / Chiffu / Úderu (Organ)
         public double ChiffNoiseGain { get; set; } = 0.2;
@@ -82,13 +95,6 @@
         // (textura úderu/drnknutí). Základní tón vždy nese ten deterministický
         // tvar, ne šum - tohle je jen na "dech"/špínu zvuku navrch.
         public double ExcitationNoiseAmount { get; set; } = 0.15;
-
-        // --- Partiály pro Instrument == Bell (volitelné) ---
-        // Pokud necháš null, BellVoice použije svůj vestavěný výchozí model.
-        // Všechny tři pole musí mít stejnou délku (počet partiálů).
-        public double[] PartialRatios { get; set; } = null;
-        public double[] PartialAmplitudes { get; set; } = null;
-        public double[] PartialDecayRates { get; set; } = null;
     }
 
     public enum ModulationType

@@ -8,11 +8,8 @@ namespace InvisiblePlayer.Core.Tones
             // TADY JE TA ZMĚNA: Přidat přesný typ pole
             Name = "Bombard16Preset",
             Number = 01,
-            Temperament = Temperament.QuarterCommaMeantone,
-            Harmonics = new (double Ratio, double Amp)[]
-            {
-                (1.0, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
-            },
+            PartialRatios = new[] { 1.0, 2.0, 3.0, 4.0, 5.0 },
+            PartialAmplitudes = new[] { 1.0, 0.75, 0.60, 0.40, 0.25 },
             ChiffFilterFreqHz = 800.0,
             ChiffFilterQ = 1.2,
             ModType = ModulationType.AM,
@@ -27,10 +24,8 @@ namespace InvisiblePlayer.Core.Tones
             // TADY JE TA ZMĚNA: Přidat přesný typ pole
             Name = "ViolnBas16",
             Number = 02,
-            Harmonics = new (double Ratio, double Amp)[]
-            {
-                (1.0, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
-            },
+            PartialRatios = new[] { 1.0, 2.0, 3.0, 4.0, 5.0 },
+            PartialAmplitudes = new[] { 1.0, 0.75, 0.60, 0.40, 0.25 },
             ChiffFilterFreqHz = 800.0,
             ChiffFilterQ = 1.2,
             ModType = ModulationType.AM,
@@ -48,10 +43,6 @@ namespace InvisiblePlayer.Core.Tones
             Name = "Aeolus",
             Number = 85,
             Instrument = InstrumentType.Bell,
-            Harmonics = new (double Ratio, double Amp)[]
-            {
-                (0.501, 1.0), (2.0, 0.75), (3.0, 0.60), (4.0, 0.40), (5.0, 0.25)
-            },
 
             // Vlastní partiály - klidně i jiný počet než výchozích 7
             PartialRatios = new[] { 0.50, 1.00, 1.19, 1.55, 2.02, 2.60 },
