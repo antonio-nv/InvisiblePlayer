@@ -16,6 +16,12 @@ namespace InvisiblePlayer.Core.Generators
         private readonly NoiseGenerator _noiseGen = new NoiseGenerator();
         private readonly BandPassFilter _chiffFilter = new BandPassFilter();
 
+        // AM/FM modulace (tremolo/vibrato) - viz komentář u CalculateWaveform.
+        private readonly ModulationType _modType;
+        private readonly double _modSpeedHz;
+        private readonly double _modDepth;
+        private double _modPhase = 0.0;
+
         // Chiff je ŠUM (širokopásmový signál) - i po vytvarování registrovým
         // _chiffFilter má reálnou šířku spektra, takže se (na rozdíl od
         // sinusových harmonických) musí doopravdy rozdělit skutečnou výhybkou,
@@ -38,6 +44,10 @@ namespace InvisiblePlayer.Core.Generators
             _partialAmplitudes = hasPartials ? preset.PartialAmplitudes : new double[] { 1.0 };
             _phases = new double[_partialRatios.Length];
 
+            _modType = preset.ModType;
+            _modSpeedHz = preset.ModSpeedHz;
+            _modDepth = preset.ModDepth;
+
             // VARHANNÍ OBÁLKA:
             NoteEnvelope.AttackTime = 0.015f;  // Rychlý náběh
             NoteEnvelope.DecayTime = 0.05f;
@@ -58,6 +68,35 @@ namespace InvisiblePlayer.Core.Generators
         {
             BandSample bands = default;
 
+            // AM/FM modulace (tremolo/vibrato) - společný pomalý LFO (ModSpeedHz),
+            // podle ModType se uplatní buď na KMITOČET (FM = vibrato), nebo na
+            // VÝSLEDNOU HLASITOST (AM = tremolo). POZOR: ModDepth má u těchhle
+            // dvou úplně jiný rozsah, než jaký se používá jinde v projektu pro
+            // "chorus v centech" (tam bývá ModDepth v jednotkách centů, klidně
+            // desítky) - tady je to ZLOMEK (podíl), takže:
+            //   FM: ModDepth ~ 0.002-0.01  (0,2-1 % kolísání kmitočtu - jemné vibrato)
+            //   AM: ModDepth ~ 0.1-0.4     (10-40 % kolísání hlasitosti - slyšitelné tremolo)
+            // Hodnoty jako 4.0 (centy odjinud v projektu) by u FM úplně rozladily
+            // tón, u AM by zase přetáčely hlasitost do záporných hodnot (proto je
+            // dole ošetřený Clamp).
+            double effectiveFrequency = frequency;
+            double amplitudeMultiplier = 1.0;
+
+            if (_modType != ModulationType.None && _modSpeedHz > 0.0)
+            {
+                double modPhase = AdvancePhase(ref _modPhase, 1.0, _modSpeedHz);
+                double modulator = Math.Sin(modPhase * 2.0 * Math.PI);
+
+                if (_modType == ModulationType.FM)
+                {
+                    effectiveFrequency = frequency * (1.0 + modulator * _modDepth);
+                }
+                else if (_modType == ModulationType.AM)
+                {
+                    amplitudeMultiplier = Math.Clamp(1.0 + modulator * _modDepth, 0.0, 2.0);
+                }
+            }
+
             // 1. Zvuk alikvótních píšťal - stejné pole jako u Bell/AdditiveString
             // (PartialRatios/PartialAmplitudes), jen se tady VŮBEC nepoužívá
             // PartialDecayRates - foukaná píšťala hraje na konstantní hlasitosti,
@@ -68,9 +107,9 @@ namespace InvisiblePlayer.Core.Generators
             // filtrování netřeba.
             for (int i = 0; i < _partialRatios.Length; i++)
             {
-                double harmonicFreq = frequency * _partialRatios[i];
-                double phase = AdvancePhase(ref _phases[i], _partialRatios[i], frequency);
-                double value = Math.Sin(phase * 2.0 * Math.PI) * _partialAmplitudes[i];
+                double harmonicFreq = effectiveFrequency * _partialRatios[i];
+                double phase = AdvancePhase(ref _phases[i], _partialRatios[i], effectiveFrequency);
+                double value = Math.Sin(phase * 2.0 * Math.PI) * _partialAmplitudes[i] * amplitudeMultiplier;
 
                 AddToBand(ref bands, harmonicFreq, value);
             }

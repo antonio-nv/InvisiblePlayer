@@ -16,7 +16,7 @@ namespace InvisiblePlayer.Core.Tones
             ChiffFilterQ = 1.2,
             ModType = ModulationType.AM,
             ModSpeedHz = 30.5,
-            ModDepth = 4.0
+            ModDepth = 0.2
         };
     }
 }
