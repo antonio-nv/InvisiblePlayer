@@ -61,6 +61,7 @@ namespace InvisiblePlayer.Core.ToneEngine
                 _500_Piano_Additivni.Preset,
                 _501_Cembalo_Additivni.Preset,
                 _400_Zvon_Zikmund.Preset,
+                _600_Strings.Preset,
             };
 
             var dict = new Dictionary<int, VoicePreset>();
