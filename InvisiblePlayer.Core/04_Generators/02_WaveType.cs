@@ -64,10 +64,33 @@
         public double ChiffFilterQ { get; set; } = 1.0;
         public double ChiffDurationSec { get; set; } = 0.030; // 30ms
 
-        // Modulace (Vibrato / Tremolo)
+        // Modulace (Vibrato / Tremolo) - kmitající v čase, viz OrganVoice/BellVoice.
         public ModulationType ModType { get; set; } = ModulationType.None;
         public double ModSpeedHz { get; set; } = 5.5;
         public double ModDepth { get; set; } = 0.08;
+
+        // Statický chór (rozladění druhé kopie celé alikvotní řady, v CENTECH) -
+        // viz OrganVoice.cs. 0 = vypnuto (jeden hlas, jako doteď). Tohle je ta
+        // "STATICKÁ" varianta chóru (dvě pevné, nekmitající frekvence blízko
+        // sebe) - přesně to, co bylo naměřeno u Casio STRINGS (zdvojené,
+        // těsně u sebe ležící spektrální čáry). NENÍ to totéž jako ModType=AM/FM
+        // (ty kmitají v čase, tady se jen jednou provždy rozladí druhá kopie).
+        public double ChorusDetuneCents { get; set; } = 0.0;
+
+        // Poměr hlasitosti mezi hlasem A (základní) a hlasem B (rozladěná
+        // kopie), 0.0 = jen hlas A (chór fakticky vypnutý), 1.0 = oba stejně
+        // hlasitě. Výchozí 0.5 dá vyrovnaný dvouhlasý chór.
+        public double ChorusMix { get; set; } = 0.5;
+
+        // NEPOVINNÉ: rozladění NEZÁVISLE pro každou harmonickou zvlášť (v
+        // centech), stejně dlouhé pole jako PartialRatios. Když je vyplněné,
+        // MÁ PŘEDNOST před jednotným ChorusDetuneCents - skutečné analogové
+        // ensemble stroje totiž nerozlaďují celé spektrum jedním pevným
+        // poměrem, ale každý oscilátor/harmonickou zvlášť, nezávisle (viz
+        // naměřená data z Casio STRINGS - rozladění tam kolísalo od ~7 do
+        // ~96 centů podle harmonické, ne jedna konstanta). Necháš-li null,
+        // použije se jednotné ChorusDetuneCents jako doteď.
+        public double[] PartialDetuneCentsB { get; set; } = null;
 
         // Volitelné přepsání ADSR obálky (útok/pokles/sustain/dozvuk) - funguje
         // pro JAKÝKOLIV Instrument (Organ/Piano/Cembalo/Bell). Když necháš null,

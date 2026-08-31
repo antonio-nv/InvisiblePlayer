@@ -11,7 +11,8 @@ namespace InvisiblePlayer.Core.Generators
         private readonly VoicePreset _preset;
         private readonly double[] _partialRatios;
         private readonly double[] _partialAmplitudes;
-        private double[] _phases;
+        private double[] _phasesA;
+        private double[] _phasesB; // druhý, staticky rozladěný hlas (chór) - viz CalculateWaveform
         private double _chiffEnvelope = 1.0;
         private readonly NoiseGenerator _noiseGen = new NoiseGenerator();
         private readonly BandPassFilter _chiffFilter = new BandPassFilter();
@@ -21,6 +22,13 @@ namespace InvisiblePlayer.Core.Generators
         private readonly double _modSpeedHz;
         private readonly double _modDepth;
         private double _modPhase = 0.0;
+
+        // Statický chór (viz komentář u CalculateWaveform).
+        private readonly bool _chorusEnabled;
+        private readonly double _chorusDetuneRatio;
+        private readonly double[] _perPartialDetuneRatio; // null = použij _chorusDetuneRatio pro všechny
+        private readonly double _gainA;
+        private readonly double _gainB;
 
         // Chiff je ŠUM (širokopásmový signál) - i po vytvarování registrovým
         // _chiffFilter má reálnou šířku spektra, takže se (na rozdíl od
@@ -42,11 +50,38 @@ namespace InvisiblePlayer.Core.Generators
 
             _partialRatios = hasPartials ? preset.PartialRatios : new double[] { 1.0 };
             _partialAmplitudes = hasPartials ? preset.PartialAmplitudes : new double[] { 1.0 };
-            _phases = new double[_partialRatios.Length];
+            _phasesA = new double[_partialRatios.Length];
+            _phasesB = new double[_partialRatios.Length];
 
             _modType = preset.ModType;
             _modSpeedHz = preset.ModSpeedHz;
             _modDepth = preset.ModDepth;
+
+            _chorusDetuneRatio = Math.Pow(2.0, preset.ChorusDetuneCents / 1200.0);
+            _chorusEnabled = preset.ChorusDetuneCents != 0.0 || preset.PartialDetuneCentsB != null;
+
+            bool hasPerPartialDetune =
+                preset.PartialDetuneCentsB != null &&
+                preset.PartialDetuneCentsB.Length == _partialRatios.Length;
+
+            if (hasPerPartialDetune)
+            {
+                _perPartialDetuneRatio = new double[_partialRatios.Length];
+                for (int i = 0; i < _partialRatios.Length; i++)
+                {
+                    _perPartialDetuneRatio[i] = Math.Pow(2.0, preset.PartialDetuneCentsB[i] / 1200.0);
+                }
+            }
+            else
+            {
+                _perPartialDetuneRatio = null; // padne se na jednotné _chorusDetuneRatio
+            }
+            // Jednoduchý lineární crossfade: ChorusMix=0 -> jen hlas A (chór
+            // vypnutý), ChorusMix=0.5 -> oba stejně hlasitě, ChorusMix=1 ->
+            // jen rozladěný hlas B.
+            double mix = Math.Clamp(preset.ChorusMix, 0.0, 1.0);
+            _gainA = 1.0 - mix;
+            _gainB = mix;
 
             // VARHANNÍ OBÁLKA:
             NoteEnvelope.AttackTime = 0.015f;  // Rychlý náběh
@@ -105,13 +140,36 @@ namespace InvisiblePlayer.Core.Generators
             // sinusovka má přesně daný kmitočet, takže ji rovnou zařadíme do
             // správného pásma podle toho, kolik Hz doopravdy má - žádné
             // filtrování netřeba.
+            //
+            // STATICKÝ CHÓR: pokud je ChorusDetuneCents nastavené, CELÁ tahle
+            // alikvotní řada se navíc přehraje podruhé, s pevně (ne kmitajícím
+            // způsobem jako u AM/FM) rozladěnou frekvencí - přesně to, co bylo
+            // naměřeno u Casio STRINGS (např. 2.9662x A 2.9865x zvlášť, ne
+            // jeden kmitající pás). Výsledkem jsou zdvojené, těsně u sebe
+            // ležící spektrální čáry - to "ztluštění", které AM/FM nikdy
+            // nedokáže vytvořit, protože ty vytváří postranní pásma okolo
+            // JEDNÉ čáry, ne dvě samostatné pevné čáry.
             for (int i = 0; i < _partialRatios.Length; i++)
             {
-                double harmonicFreq = effectiveFrequency * _partialRatios[i];
-                double phase = AdvancePhase(ref _phases[i], _partialRatios[i], effectiveFrequency);
-                double value = Math.Sin(phase * 2.0 * Math.PI) * _partialAmplitudes[i] * amplitudeMultiplier;
+                double ratio = _partialRatios[i];
+                double amp = _partialAmplitudes[i];
 
-                AddToBand(ref bands, harmonicFreq, value);
+                double freqA = effectiveFrequency;
+                double phaseA = AdvancePhase(ref _phasesA[i], ratio, freqA);
+                double valueA = Math.Sin(phaseA * 2.0 * Math.PI) * amp * amplitudeMultiplier * _gainA;
+                AddToBand(ref bands, freqA * ratio, valueA);
+
+                if (_chorusEnabled)
+                {
+                    double detuneRatio = _perPartialDetuneRatio != null
+                        ? _perPartialDetuneRatio[i]
+                        : _chorusDetuneRatio;
+
+                    double freqB = effectiveFrequency * detuneRatio;
+                    double phaseB = AdvancePhase(ref _phasesB[i], ratio, freqB);
+                    double valueB = Math.Sin(phaseB * 2.0 * Math.PI) * amp * amplitudeMultiplier * _gainB;
+                    AddToBand(ref bands, freqB * ratio, valueB);
+                }
             }
 
             // 2. Chiff (zapraskání vzduchu při otevření ventilu) - barva chiffu
