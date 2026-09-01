@@ -501,7 +501,7 @@ namespace InvisiblePlayer.UI.Windows
             string barMid = AudioMeter.RenderBar(_midDb, 80);
             string barTreble = AudioMeter.RenderBar(_trebleDb, 80);
 
-            Console.Write(" B: [");
+            Console.Write(" H: [");
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write(barBass);
             Console.ResetColor();
