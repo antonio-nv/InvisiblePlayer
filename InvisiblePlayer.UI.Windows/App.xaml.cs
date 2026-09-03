@@ -35,10 +35,15 @@ namespace InvisiblePlayer.UI.Windows
             }
             else if (ext == ".mid" || ext == ".midi")
             {
-                // MIDI -> Spustíme přehrávání souboru přes náš nový InputManager v Core
-                _ = inputManager.PlayMidiFileAsync(filePath);
-
-                // Spustíme VGA konzoli pro vizualizaci
+                // MIDI SOUBOR -> přehráváme na PC natvrdo jako klavír přes vestavěný
+                // Microsoft GS Wavetable Synth (viz GmPianoMidiPlayer). Toto NEjde
+                // přes InvisiblePlayer.Core / ToneEngine - ten zůstává nedotčený
+                // a slouží dál jen pro živé hraní z MIDI-IN klávesnice (inputManager
+                // výše, StartLiveDevice), s výhledem na budoucí HW nástroj.
+                //
+                // Spuštění a řízení přehrávání .mid souboru má na starosti přímo
+                // VgaEngine (má tam vlastní instanci GmPianoMidiPlayer a napojený
+                // náhled aktivních not).
                 VgaEngine.Run(filePath);
             }
             else

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -12,6 +14,33 @@ namespace InvisiblePlayer.UI.Windows
         private static DirectoryNavigator _navigator = new();
         private static AudioPlayer _audioPlayer = new();
 
+        // Perzistentní nastavení (settings.json) - načteno jednou při startu
+        // konzole. Volume se do něj ukládá při každé změně hlasitosti (viz
+        // ChangeVolume), ať se skutečná hodnota nezapomíná, jak se dělo dřív.
+        private static AppSettings _settings = new();
+
+        // Přehrávač .mid souborů na PC (natvrdo klavír přes Microsoft GS Wavetable
+        // Synth) - viz GmPianoMidiPlayer.cs. Úmyslně NEpoužívá InvisiblePlayer.Core.
+        private static GmPianoMidiPlayer _midiPlayer = new();
+
+        // Sdílený stav právě znějících not (kanál, MIDI číslo noty) pro jednoduchý
+        // stackovaný náhled osnov níž (RenderMidiStaffOnly). Aktualizuje se
+        // z přehrávacího vlákna GmPianoMidiPlayer, čte se z hlavního vlákna
+        // konzole - proto zámek.
+        private static readonly object _midiNotesLock = new object();
+        private static readonly HashSet<(int Channel, int Note)> _midiActiveNotes = new();
+
+        // Seznam kanálů (notových osnov), které aktuálně přehrávaný .mid soubor
+        // vůbec používá - zjištěno jednorázově při načtení souboru (viz
+        // GmPianoMidiPlayer.ChannelsDetected). Díky tomu se ve VGA konzoli
+        // zobrazují všechny osnovy trvale (i tiché), místo aby chaoticky
+        // vyskakovaly a mizely jen podle toho, co zrovna zní.
+        private static int[] _midiUsedChannels = Array.Empty<int>();
+        private static bool _midiFinishedNaturally = false;
+        private static string? _midiErrorMessage = null;
+        private static bool _midiPlayerEventsWired = false;
+        private static bool _settingsLoaded = false;
+
         private static double _leftDb = -120.0;
         private static double _rightDb = -120.0;
 
@@ -23,7 +52,6 @@ namespace InvisiblePlayer.UI.Windows
         private static int _volume = 80;
         private static bool _isPaused = false;
 
-        private static bool[] _channelMuted = new bool[16];
         private static bool _isMidiMode = false;
 
         // Buffer pro číselné zadávání čísla rejstříku (viz HandleInput / RenderMetersOnly)
@@ -103,6 +131,44 @@ namespace InvisiblePlayer.UI.Windows
 
         public static void Run(string filePath)
         {
+            // Načtení uloženého nastavení (hlasitost atd.) - jen jednou, při
+            // prvním spuštění konzole. Dřív se _volume vždycky natvrdo
+            // inicializovalo na 80 bez ohledu na settings.json.
+            if (!_settingsLoaded)
+            {
+                _settings = AppSettings.Load();
+                _volume = _settings.Volume;
+                _settingsLoaded = true;
+            }
+
+            // Napojení sledování aktivních not pro náhled osnov - jen jednou,
+            // ať se při dalších voláních Run() (další soubor) neregistrují
+            // duplicitní handlery.
+            if (!_midiPlayerEventsWired)
+            {
+                _midiPlayer.NoteOnRaised += (channel, note) =>
+                {
+                    lock (_midiNotesLock) { _midiActiveNotes.Add((channel, note)); }
+                };
+                _midiPlayer.NoteOffRaised += (channel, note) =>
+                {
+                    lock (_midiNotesLock) { _midiActiveNotes.Remove((channel, note)); }
+                };
+                _midiPlayer.ChannelsDetected += channels =>
+                {
+                    lock (_midiNotesLock) { _midiUsedChannels = channels; }
+                };
+                _midiPlayer.PlaybackFinishedNaturally += () =>
+                {
+                    lock (_midiNotesLock) { _midiFinishedNaturally = true; }
+                };
+                _midiPlayer.PlaybackFailed += ex =>
+                {
+                    lock (_midiNotesLock) { _midiErrorMessage = ex.Message; }
+                };
+                _midiPlayerEventsWired = true;
+            }
+
             // 1. Otevření konzole a vynucení fokusu
             AllocConsole();
             IntPtr hwnd = GetConsoleWindow();
@@ -191,6 +257,26 @@ namespace InvisiblePlayer.UI.Windows
                         RenderDashboard();
                     }
                 }
+                else if (_isMidiMode)
+                {
+                    // Stejné chování jako u zvukových souborů výše - jen zdroj
+                    // informace "dohráno" je jiný (event z GmPianoMidiPlayer
+                    // místo porovnávání CurrentTime/TotalTime).
+                    bool finishedNaturally;
+                    lock (_midiNotesLock)
+                    {
+                        finishedNaturally = _midiFinishedNaturally;
+                        _midiFinishedNaturally = false;
+                    }
+
+                    if (finishedNaturally)
+                    {
+                        _navigator.GetNextFile();
+                        UpdateFileTypeState();
+                        Console.Clear();
+                        RenderDashboard();
+                    }
+                }
 
                 // D) Vykreslení VU metrů / MIDI osnovy
                 if (!_isMidiMode)
@@ -235,6 +321,7 @@ namespace InvisiblePlayer.UI.Windows
             }
 
             _audioPlayer.Dispose();
+            _midiPlayer.Stop();
             Console.CursorVisible = true;
         }
 
@@ -278,6 +365,13 @@ namespace InvisiblePlayer.UI.Windows
         {
             _volume = Math.Clamp(_volume + delta, 0, 100);
             _audioPlayer.Volume = _volume / 100.0f;
+            _midiPlayer.SetVolume(_volume);
+
+            // Uložíme SKUTEČNOU aktuální hodnotu - dřív se sem nikdy
+            // nezapsalo nic jiného než výchozích 80, protože se
+            // AppSettings.Volume nikde neaktualizovalo před Save().
+            _settings.Volume = _volume;
+            _settings.Save();
         }
 
         private static void UpdateFileTypeState()
@@ -287,12 +381,37 @@ namespace InvisiblePlayer.UI.Windows
 
             _isMidiMode = (ext == ".mid" || ext == ".midi" || ext == ".kar");
 
-            if (!_isMidiMode && File.Exists(currentFile))
+            if (_isMidiMode)
             {
-                _audioPlayer.Load(currentFile);
-                _audioPlayer.Volume = _volume / 100.0f;
-                _audioPlayer.Play();
-                _isPaused = false;
+                lock (_midiNotesLock)
+                {
+                    _midiActiveNotes.Clear();
+                    _midiUsedChannels = Array.Empty<int>();
+                    _midiFinishedNaturally = false;
+                    _midiErrorMessage = null;
+                }
+
+                if (File.Exists(currentFile))
+                {
+                    // Fire-and-forget - přehrávání běží na vlastním vlákně uvnitř
+                    // GmPianoMidiPlayer, konzole se dál věnuje vykreslování a vstupu.
+                    _ = _midiPlayer.PlayAsync(currentFile);
+                    _midiPlayer.SetVolume(_volume);
+                }
+            }
+            else
+            {
+                // Přechod z MIDI souboru na audio/jiný soubor - ukončíme případné
+                // běžící MIDI přehrávání, ať nehraje na pozadí přes další skladbu.
+                _midiPlayer.Stop();
+
+                if (File.Exists(currentFile))
+                {
+                    _audioPlayer.Load(currentFile);
+                    _audioPlayer.Volume = _volume / 100.0f;
+                    _audioPlayer.Play();
+                    _isPaused = false;
+                }
             }
         }
 
@@ -384,12 +503,14 @@ namespace InvisiblePlayer.UI.Windows
 
                 // Šipka doprava -> +5s
                 case ConsoleKey.RightArrow:
-                    _audioPlayer.Seek(5.0);
+                    if (_isMidiMode) _midiPlayer.Seek(5.0);
+                    else _audioPlayer.Seek(5.0);
                     break;
 
                 // Šipka doleva -> -5s
                 case ConsoleKey.LeftArrow:
-                    _audioPlayer.Seek(-5.0);
+                    if (_isMidiMode) _midiPlayer.Seek(-5.0);
+                    else _audioPlayer.Seek(-5.0);
                     break;
 
                 // Hlasitost
@@ -545,28 +666,99 @@ namespace InvisiblePlayer.UI.Windows
         {
             Console.SetCursorPosition(0, 7);
 
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.Write(" Staff Attenuation Keys [1-0]: ");
-            for (int i = 0; i < 10; i++)
-            {
-                string label = (i == 9) ? "Ch10[DRUM]" : $"Ch{i + 1:D2}";
-                if (_channelMuted[i])
-                {
-                    Console.BackgroundColor = ConsoleColor.DarkRed;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.Write($"[{label}:MUTED] ");
-                    Console.ResetColor();
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                }
-                else
-                {
-                    Console.Write($"[{label}:ON] ");
-                }
-            }
-            Console.WriteLine();
-            Console.ResetColor();
+            Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine("-----------------------------------------------------------------------------------------");
-            Console.WriteLine(" [MIDI Active Notes & Lyrics Staff View Placeholder]                                    ");
+            Console.ResetColor();
+
+            // Jednoduchý náhled osnov - jeden řádek pro každou notovou osnovu
+            // (kanál), kterou soubor používá, řádky pod sebou. Osnovy se
+            // zobrazují TRVALE (nemizí, když zrovna nic nehrají) - jen se jim
+            // mění obsah podle právě znějících not. Není to grafická notace,
+            // jen názvy právě znějících not seřazené od nejnižší po nejvyšší.
+            int[] usedChannels;
+            (int Channel, int Note)[] activeNotesSnapshot;
+            string? errorMessage;
+            lock (_midiNotesLock)
+            {
+                usedChannels = _midiUsedChannels;
+                activeNotesSnapshot = _midiActiveNotes.ToArray();
+                errorMessage = _midiErrorMessage;
+            }
+
+            if (errorMessage != null)
+            {
+                // Soubor se nepodařilo načíst/přehrát - zůstáváme stát na něm
+                // (viz GmPianoMidiPlayer.PlaybackFailed) a ukážeme proč, ať se
+                // dá diagnostikovat, i kdyby v adresáři bylo víc vadných
+                // souborů za sebou.
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(" CHYBA při přehrávání tohoto souboru - zůstávám stát, další soubor se nespustí:");
+                Console.WriteLine($" {errorMessage}".PadRight(90));
+                Console.ResetColor();
+
+                for (int i = 0; i < 8; i++)
+                {
+                    Console.WriteLine(new string(' ', 90));
+                }
+                return;
+            }
+
+            var notesByChannel = activeNotesSnapshot
+                .GroupBy(n => n.Channel)
+                .ToDictionary(g => g.Key, g => g.Select(n => n.Note).OrderBy(n => n).ToArray());
+
+            int staffLines = 0;
+            foreach (int channel in usedChannels)
+            {
+                string channelLabel = channel == 9 ? "Ch10[DRUM]" : $"Ch{channel + 1:D2}";
+                string notes = notesByChannel.TryGetValue(channel, out var noteNumbers)
+                    ? string.Join(" ", noteNumbers.Select(NoteNumberToName))
+                    : "";
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write($" {channelLabel,-10}: ");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(notes.PadRight(80));
+                Console.ResetColor();
+                staffLines++;
+            }
+
+            if (staffLines == 0)
+            {
+                Console.WriteLine(" (osnovy souboru zatím nejsou rozpoznané)                                              ");
+                staffLines = 1;
+            }
+
+            // Diagnostika převíjení (ne fatální chyba, jen info k ladění) -
+            // vypisujeme ji sem místo jen Debug.WriteLine, protože to je
+            // v Release buildu jinak úplně neviditelné.
+            string? seekDiagnostic = _midiPlayer.LastSeekDiagnostic;
+            if (!string.IsNullOrEmpty(seekDiagnostic))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($" [Převíjení] {seekDiagnostic}".PadRight(90));
+                Console.ResetColor();
+                staffLines++;
+            }
+
+            // Smažeme případný zbytek předchozích (delších) osnov, ať staré řádky
+            // nezůstanou "viset" pod aktuálním výpisem po zmenšení počtu kanálů.
+            for (int i = staffLines; i < 10; i++)
+            {
+                Console.WriteLine(new string(' ', 90));
+            }
+        }
+
+        /// <summary>
+        /// Převede MIDI číslo noty na běžný název (např. 60 -&gt; "C4", 69 -&gt; "A4").
+        /// Střední C (MIDI 60) je podle konvence C4.
+        /// </summary>
+        private static string NoteNumberToName(int noteNumber)
+        {
+            string[] names = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+            int octave = (noteNumber / 12) - 1;
+            string name = names[((noteNumber % 12) + 12) % 12];
+            return $"{name}{octave}";
         }
     }
 }

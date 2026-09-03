@@ -52,11 +52,24 @@ namespace InvisiblePlayer.UI.Windows
 
         private void StartPlayingCurrentFile()
         {
-            string? currentFile = _navigator.CurrentFile;
-            if (currentFile != null && File.Exists(currentFile) && _libVLC != null && _mediaPlayer != null)
+            try
             {
+                string? currentFile = _navigator.CurrentFile;
+                if (currentFile == null || !File.Exists(currentFile) || _libVLC == null || _mediaPlayer == null)
+                    return;
+
+                // Nejdřív zastavíme předchozí přehrávání - přímé spuštění nového
+                // Media bez Stop() (hlavně při rychlém opakovaném PageUp/PageDown)
+                // občas způsobovalo pád LibVLC (AccessViolationException uvnitř
+                // nativní knihovny) a aplikace šla zavřít jen přes Alt+F4.
+                _mediaPlayer.Stop();
+
                 using var media = new Media(_libVLC, new Uri(currentFile));
                 _mediaPlayer.Play(media);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Chyba při přepínání videa: {ex.Message}");
             }
         }
 
@@ -170,14 +183,28 @@ namespace InvisiblePlayer.UI.Windows
 
                 // Přeskakování souborů
                 case Key.PageDown:
-                    _navigator.GetNextFile();
-                    StartPlayingCurrentFile();
+                    try
+                    {
+                        _navigator.GetNextFile();
+                        StartPlayingCurrentFile();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Chyba při přechodu na další soubor: {ex.Message}");
+                    }
                     e.Handled = true;
                     break;
 
                 case Key.PageUp:
-                    _navigator.GetPreviousFile();
-                    StartPlayingCurrentFile();
+                    try
+                    {
+                        _navigator.GetPreviousFile();
+                        StartPlayingCurrentFile();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Chyba při přechodu na předchozí soubor: {ex.Message}");
+                    }
                     e.Handled = true;
                     break;
             }

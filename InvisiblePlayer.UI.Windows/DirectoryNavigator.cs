@@ -123,7 +123,8 @@ namespace InvisiblePlayer.Core
         {
             string ext = Path.GetExtension(path).ToLowerInvariant();
             return ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".mid" || ext == ".midi" || ext == ".kar"
-                || ext == ".avi" || ext == ".mp4" || ext == ".mkv" || ext == ".wmv"; // <--- Přidány video formáty
+                || ext == ".avi" || ext == ".mp4" || ext == ".mkv" || ext == ".wmv"
+                || ext == ".mov" || ext == ".flv" || ext == ".webm" || ext == ".m4v"; // <--- Doplněny chybějící video formáty
         }
     }
 }
