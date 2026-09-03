@@ -1,0 +1,61 @@
+﻿<Window x:Class="PS150.Analyzer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ScottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+        Title="PS150 - Výpomocný frekvenční analyzátor" Height="700" Width="1000"
+        Background="#1E1E1E" KeyDown="Window_KeyDown">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Horní lišta s ovládáním -->
+            <RowDefinition Height="*"/>
+            <!-- Graf ScottPlot -->
+            <RowDefinition Height="Auto"/>
+            <!-- VÝSTUP KOUZLA (Textové pole) -->
+            <RowDefinition Height="Auto"/>
+            <!-- VU METR (Živý ukazatel) -->
+        </Grid.RowDefinitions>
+
+        <!-- 0. HORNI LISTA -->
+        <WrapPanel Grid.Row="0" Margin="0,0,0,10" VerticalAlignment="Center">
+            <TextBlock Text="Vstup:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="Bold"/>
+            <ComboBox x:Name="ComboMicrophones" Width="180" Margin="0,0,10,0"/>
+
+            <TextBlock Text="Okno FFT:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="Bold"/>
+            <ComboBox x:Name="ComboFftSize" Width="190" Margin="0,0,10,0" SelectionChanged="ComboFftSize_SelectionChanged"/>
+
+            <TextBlock Text="Kouzlo:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0" FontWeight="Bold"/>
+            <ComboBox x:Name="ComboMagicMode" Width="190" Margin="0,0,10,0">
+                <ComboBoxItem Content="🎹 Varhany (Harmonické zlomky)"/>
+                <ComboBoxItem Content="🔔 Zvon (Nekonečné piky)"/>
+                <ComboBoxItem Content="🥁 Šum / Fuk (Obálka energy)" IsSelected="True"/>
+            </ComboBox>
+
+            <Button x:Name="BtnSnap" Content="📸 SNAP [Enter]" Width="130" Padding="6" Click="BtnSnap_Click" Background="#2196F3" Foreground="White" FontWeight="Bold" Margin="0,0,5,0"/>
+            <Button x:Name="BtnLive" Content="▶ Živě [Esc]" Width="90" Padding="6" Click="BtnLive_Click" Background="#4CAF50" Foreground="White" FontWeight="Bold"/>
+        </WrapPanel>
+
+        <!-- 1. GRAF -->
+        <ScottPlot:WpfPlot x:Name="WpfPlot1" Grid.Row="1" Foreground="White"/>
+
+        <!-- 2. VÝSTUP KOUZLA (Text) - Dáno na samostatný řádek s dostatečnou výškou -->
+        <TextBox x:Name="TxtMagicOutput" Grid.Row="2" Height="90" Margin="0,8,0,8" 
+                 Background="#111111" Foreground="#00FF66" FontFamily="Consolas" 
+                 FontSize="12" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
+                 Text="Zde se zobrazí výsledný matematický popis zachyceného zvuku..."/>
+
+        <!-- 3. VU METR - Samostatný dolní řádek -->
+        <Grid Grid.Row="3" Margin="0,2,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="60"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Text="Vybuzení vstupu (VU):" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="Bold"/>
+            <ProgressBar x:Name="VuMeter" Grid.Column="1" Height="18" Minimum="0" Maximum="100" Value="0" Background="#333333" Foreground="#2ECC71"/>
+            <TextBlock x:Name="TxtVuDb" Grid.Column="2" Text="-60.0 dB" Foreground="White" HorizontalAlignment="Right" VerticalAlignment="Center" FontWeight="Bold"/>
+        </Grid>
+    </Grid>
+</Window>

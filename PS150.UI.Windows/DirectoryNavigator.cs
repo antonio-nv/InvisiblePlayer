@@ -1,0 +1,130 @@
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+
+namespace PS150.Core
+{
+    public class DirectoryNavigator
+    {
+        private List<string> _playlist = new();
+        private int _currentIndex = -1;
+
+        public string? CurrentFile => (_currentIndex >= 0 && _currentIndex < _playlist.Count)
+            ? _playlist[_currentIndex]
+            : null;
+
+        public void LoadDirectory(string initialFilePath)
+        {
+            if (string.IsNullOrEmpty(initialFilePath) || !File.Exists(initialFilePath))
+                return;
+
+            string? folder = Path.GetDirectoryName(initialFilePath);
+            if (folder == null) return;
+
+            // Načteme všechny podporované soubory v aktuální složce
+            _playlist = Directory.GetFiles(folder)
+                .Where(f => IsSupportedExtension(f))
+                .OrderBy(f => f)
+                .ToList();
+
+            _currentIndex = _playlist.IndexOf(initialFilePath);
+        }
+
+        public string? GetNextFile()
+        {
+            if (_playlist.Count == 0) return null;
+
+            string? lastValidFile = CurrentFile;
+            _currentIndex++;
+
+            // Pokud jsme dojeli na konec složky, zkusíme najít sousední složku
+            if (_currentIndex >= _playlist.Count)
+            {
+                if (TryToNavigateToNeighborFolder(lastValidFile, next: true))
+                {
+                    _currentIndex = 0; // První soubor v nové složce
+                }
+                else
+                {
+                    _currentIndex = _playlist.Count - 1; // Zůstaneme na posledním
+                }
+            }
+
+            return CurrentFile;
+        }
+
+        public string? GetPreviousFile()
+        {
+            if (_playlist.Count == 0) return null;
+
+            string? lastValidFile = CurrentFile;
+            _currentIndex--;
+
+            // Pokud jsme vyskočili před začátek složky, zkusíme přejít do předchozí složky
+            if (_currentIndex < 0)
+            {
+                if (TryToNavigateToNeighborFolder(lastValidFile, next: false))
+                {
+                    _currentIndex = _playlist.Count - 1; // Poslední soubor v předchozí složce
+                }
+                else
+                {
+                    _currentIndex = 0; // Zůstaneme na prvním
+                }
+            }
+
+            return CurrentFile;
+        }
+
+        private bool TryToNavigateToNeighborFolder(string? referenceFile, bool next)
+        {
+            if (string.IsNullOrEmpty(referenceFile)) return false;
+
+            string? currentFolder = Path.GetDirectoryName(referenceFile);
+            if (currentFolder == null) return false;
+
+            DirectoryInfo? parentDir = Directory.GetParent(currentFolder);
+            if (parentDir == null) return false;
+
+            // Seznam všech podsložek v nadřazeném adresáři
+            var subFolders = parentDir.GetDirectories()
+                .OrderBy(d => d.FullName)
+                .ToList();
+
+            int currentFolderIndex = subFolders.FindIndex(d => d.FullName.Equals(currentFolder, StringComparison.OrdinalIgnoreCase));
+            if (currentFolderIndex == -1) return false;
+
+            int targetFolderIndex = next ? currentFolderIndex + 1 : currentFolderIndex - 1;
+
+            // Hledáme nejbližší složku, která obsahuje nějaké hratelné soubory
+            while (targetFolderIndex >= 0 && targetFolderIndex < subFolders.Count)
+            {
+                var targetFolder = subFolders[targetFolderIndex];
+                var filesInTarget = Directory.GetFiles(targetFolder.FullName)
+                    .Where(f => IsSupportedExtension(f))
+                    .OrderBy(f => f)
+                    .ToList();
+
+                if (filesInTarget.Count > 0)
+                {
+                    _playlist = filesInTarget;
+                    return true;
+                }
+
+                targetFolderIndex += next ? 1 : -1;
+            }
+
+            return false;
+        }
+
+
+        private static bool IsSupportedExtension(string path)
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".mid" || ext == ".midi" || ext == ".kar"
+                || ext == ".avi" || ext == ".mp4" || ext == ".mkv" || ext == ".wmv"
+                || ext == ".mov" || ext == ".flv" || ext == ".webm" || ext == ".m4v"; // <--- Doplněny chybějící video formáty
+        }
+    }
+}

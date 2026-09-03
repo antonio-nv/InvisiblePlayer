@@ -1,15 +1,15 @@
-# InvisiblePlayer
+﻿# PS150
 
 Sada projektů okolo přehrávání a syntézy zvuku pro Windows, s výhledem na budoucí hardwarové
 rozšíření (elektronické varhany na Raspberry Pi).
 
 ## Projekty v tomto řešení
 
-- **InvisiblePlayer.UI.Windows** – přehrávač audio/video souborů (mp3, wav, flac, MIDI, video),
+- **PS150.UI.Windows** – přehrávač audio/video souborů (mp3, wav, flac, MIDI, video),
   napojení na MIDI-IN. Zatím ve fázi provizorního textového rozhraní.
-- **InvisiblePlayer.Core** – SW syntezátor zvuku (oscilátory, obálky, filtry, hlasy nástrojů).
-- **InvisiblePlayer.Analyzer** – SW analyzátor zvuku s 2D grafy (WPF).
-- **InvisiblePlayer.Raspi** – plánovaná hardwarová větev (Raspberry Pi, HiFiBerry DAC8x,
+- **PS150.Core** – SW syntezátor zvuku (oscilátory, obálky, filtry, hlasy nástrojů).
+- **PS150.Analyzer** – SW analyzátor zvuku s 2D grafy (WPF).
+- **PS150.Raspi** – plánovaná hardwarová větev (Raspberry Pi, HiFiBerry DAC8x,
   MIDI in/out, GPIO ovládání kláves).
 
 ## Stav projektu
@@ -23,7 +23,7 @@ Vlastní kód je licencován pod [MIT licencí](LICENSE).
 
 # Third-Party Notices
 
-This project (InvisiblePlayer) is licensed under the MIT License (see [LICENSE](LICENSE)),
+This project (PS150) is licensed under the MIT License (see [LICENSE](LICENSE)),
 but it also uses the following third-party libraries, which come with their own license terms.
 
 ---
@@ -33,7 +33,7 @@ but it also uses the following third-party libraries, which come with their own 
 - **License:** GNU Lesser General Public License 2.1 or later (LGPL-2.1-or-later)
 - **Source:** https://github.com/videolan/libvlcsharp
 - **Note:** The library is referenced via dynamic linking (NuGet package / .dll reference),
-  which satisfies the LGPL requirements. InvisiblePlayer's own code, which only consumes
+  which satisfies the LGPL requirements. PS150's own code, which only consumes
   LibVLCSharp, remains under the MIT license.
   Full text of the LGPL 2.1 license: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 
