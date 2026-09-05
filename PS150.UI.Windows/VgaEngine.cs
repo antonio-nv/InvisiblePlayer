@@ -351,13 +351,20 @@ namespace PS150.UI.Windows
         private static void TogglePlayPause()
         {
             _isPaused = !_isPaused;
-            if (_isPaused)
+
+            // DŮLEŽITÉ: podle toho, jaký typ souboru zrovna hraje, se musí
+            // pozastavit/spustit ten SPRÁVNÝ přehrávač - dřív se tu vždycky
+            // sahalo jen na _audioPlayer, i když zrovna hrálo MIDI (ten pak
+            // pauza vůbec neovlivnila, MID hrál dál bez ohledu na mezerník).
+            if (_isMidiMode)
             {
-                _audioPlayer.Pause();
+                if (_isPaused) _midiPlayer.Pause();
+                else _midiPlayer.Resume();
             }
             else
             {
-                _audioPlayer.Play();
+                if (_isPaused) _audioPlayer.Pause();
+                else _audioPlayer.Play();
             }
         }
 
@@ -383,6 +390,14 @@ namespace PS150.UI.Windows
 
             if (_isMidiMode)
             {
+                // DŮLEŽITÉ: zastavit případně ještě běžící zvukový soubor
+                // (MP3/WAV/FLAC) - dřív se tu volalo jen _midiPlayer.PlayAsync()
+                // a _audioPlayer se nechal běžet dál na pozadí, takže hrálo
+                // obojí najednou (a mezerník pak omylem ovládal ten zvukový
+                // soubor, ne MIDI - viz TogglePlayPause).
+                _audioPlayer.Stop();
+                _isPaused = false;
+
                 lock (_midiNotesLock)
                 {
                     _midiActiveNotes.Clear();
@@ -534,8 +549,12 @@ namespace PS150.UI.Windows
             string folderPath = Path.GetDirectoryName(currentFile) ?? "";
             string modeLabel = _isMidiMode ? "MIDI PASS-THROUGH" : "AUDIO STREAM (WASAPI)";
 
-            TimeSpan current = _audioPlayer.CurrentTime;
-            TimeSpan total = _audioPlayer.TotalTime;
+            // Čas se čte z toho přehrávače, který právě opravdu hraje - u
+            // audio souborů z _audioPlayer (odhad z WASAPI streamu), u MIDI
+            // z _midiPlayer (přesný výpočet z dat souboru, viz komentář u
+            // GmPianoMidiPlayer.TotalTime).
+            TimeSpan current = _isMidiMode ? _midiPlayer.CurrentTime : _audioPlayer.CurrentTime;
+            TimeSpan total = _isMidiMode ? _midiPlayer.TotalTime : _audioPlayer.TotalTime;
             string timeStr = $"{current:mm\\:ss} / {total:mm\\:ss}";
 
             Console.ForegroundColor = ConsoleColor.Cyan;
@@ -546,7 +565,13 @@ namespace PS150.UI.Windows
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.Write("[<<] ");
 
-            if (!_isPaused && _audioPlayer.IsPlaying)
+            // Stejný princip jako u času výše - "hraje teď" se ptáme toho
+            // přehrávače, který je zrovna aktivní, ne vždycky _audioPlayer.
+            bool isActuallyPlaying = _isMidiMode
+                ? !_midiPlayer.IsPaused
+                : _audioPlayer.IsPlaying;
+
+            if (!_isPaused && isActuallyPlaying)
             {
                 Console.BackgroundColor = ConsoleColor.Green;
                 Console.ForegroundColor = ConsoleColor.Black;
@@ -560,7 +585,7 @@ namespace PS150.UI.Windows
             }
             Console.Write(" ");
 
-            if (_isPaused || !_audioPlayer.IsPlaying)
+            if (_isPaused || !isActuallyPlaying)
             {
                 Console.BackgroundColor = ConsoleColor.DarkRed;
                 Console.ForegroundColor = ConsoleColor.White;

@@ -73,6 +73,37 @@ namespace PS150.UI.Windows
         // viz EventPlayed níž. Výchozí 100 = beze změny.
         private volatile int _masterVolumePercent = 100;
 
+        // Nastaveno v Pause() / zrušeno v Resume() - viz komentář u monitorovací
+        // smyčky v PlayAsync níže. Bez tohohle příznaku by playback.Stop() volané
+        // z Pause() smyčku ukončilo úplně stejně, jako kdyby skladba doopravdy
+        // dohrála - a VgaEngine by omylem skočila na další soubor.
+        private volatile bool _isPausedByUser = false;
+
+        /// <summary>True, pokud je přehrávání aktuálně pozastavené přes Pause().</summary>
+        public bool IsPaused => _isPausedByUser;
+
+        // Celková délka aktuálně načteného souboru - spočítaná JEDNOU při
+        // načtení (viz PlayAsync), ne odhadovaná. Na rozdíl od komprimovaného
+        // zvuku (MP3 apod.) je délka MIDI souboru známá přesně už ze
+        // samotných dat (delta-časy + tempo-eventy), žádné dopočítávání
+        // z velikosti souboru nebo bitrate.
+        private TimeSpan _totalTime = TimeSpan.Zero;
+        public TimeSpan TotalTime => _totalTime;
+
+        /// <summary>
+        /// Aktuální pozice přehrávání. Čte se přímo z DryWetMidi Playbacku,
+        /// takže odráží i posun po Seek() nebo po Pause()/Resume().
+        /// </summary>
+        public TimeSpan CurrentTime
+        {
+            get
+            {
+                var playback = _playback;
+                if (playback == null) return TimeSpan.Zero;
+                return (TimeSpan)playback.GetCurrentTime<MetricTimeSpan>();
+            }
+        }
+
         /// <summary>Vyvoláno při rozeznění noty. Parametry: (kanál 0-15, MIDI číslo noty).</summary>
         public event Action<int, int>? NoteOnRaised;
 
@@ -105,6 +136,7 @@ namespace PS150.UI.Windows
 
             Stop();
             LastSeekDiagnostic = null;
+            _totalTime = TimeSpan.Zero;
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
 
@@ -121,6 +153,10 @@ namespace PS150.UI.Windows
                 }
 
                 midiFile = MidiFile.Read(filePath);
+
+                // Celková délka - spočítaná přesně z dat souboru (viz komentář
+                // u TotalTime výše), jednou hned po načtení.
+                _totalTime = (TimeSpan)midiFile.GetDuration<MetricTimeSpan>();
 
                 // Zjistíme, které kanály (notové osnovy) soubor vůbec používá - pro
                 // trvalé zobrazení všech osnov ve VGA konzoli a pro ping-pong
@@ -230,7 +266,16 @@ namespace PS150.UI.Windows
 
                     playback.Start();
 
-                    while (playback.IsRunning)
+                    // POZOR: podmínka "|| _isPausedByUser" je záměrná a DŮLEŽITÁ.
+                    // Pause() níže volá playback.Stop() (DryWetMidi to bere jako
+                    // "pozastav, ale nezahazuj pozici" - lze pak znovu Start()).
+                    // Jenže playback.IsRunning je po tomhle Stop() taky false -
+                    // BEZE ZKOUŠKY _isPausedByUser by tahle smyčka okamžitě
+                    // skončila stejně, jako kdyby skladba doopravdy dohrála celá,
+                    // a kód pod smyčkou by omylem vystřelil
+                    // PlaybackFinishedNaturally (VgaEngine by pak skočila na
+                    // další soubor, místo aby zůstala pozastavená na místě).
+                    while (playback.IsRunning || _isPausedByUser)
                     {
                         if (token.IsCancellationRequested)
                         {
@@ -315,6 +360,24 @@ namespace PS150.UI.Windows
         }
 
         /// <summary>
+        /// Pozastaví přehrávání na místě, beze ztráty pozice v souboru -
+        /// na rozdíl od Stop() (ten pozici zahodí a uvolní výstupní zařízení).
+        /// Volá se z mezerníku ve VGA konzoli, když je aktivní MIDI režim.
+        /// </summary>
+        public void Pause()
+        {
+            _isPausedByUser = true;
+            _playback?.Stop();
+        }
+
+        /// <summary>Obnoví přehrávání po Pause(), od stejného místa, kde se přerušilo.</summary>
+        public void Resume()
+        {
+            _isPausedByUser = false;
+            _playback?.Start();
+        }
+
+        /// <summary>
         /// Nastaví hlavní hlasitost (0-100), typicky navázáno na šipky
         /// nahoru/dolů ve VGA konzoli. Projeví se ihned na všech 16 kanálech
         /// a dál se násobí s případnou vlastní dynamikou (CC7) ze souboru.
@@ -380,6 +443,8 @@ namespace PS150.UI.Windows
 
             _outputDevice?.Dispose();
             _outputDevice = null;
+
+            _totalTime = TimeSpan.Zero;
         }
 
         public void Dispose() => Stop();
